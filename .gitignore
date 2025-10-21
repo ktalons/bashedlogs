@@ -1,0 +1,22 @@
+# Log files
+*.log
+
+# Test data
+test_logs/
+samples/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
