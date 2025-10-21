@@ -1,9 +1,9 @@
 # bashedlogs
 
-[![Bash](https://img.shields.io/badge/Bash-4.0%2B-green.svg)](https://www.gnu.org/software/bash/)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue.svg)](https://github.com/ktalons/bashedlogs)
-[![Maintained](https://img.shields.io/badge/Maintained-yes-green.svg)](https://github.com/ktalons/bashedlogs/graphs/commit-activity)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Bash 4.0+](https://img.shields.io/badge/Bash-4.0%2B-4EAA25?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
+[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](https://github.com/ktalons/bashedlogs) [![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://github.com/ktalons/bashedlogs)
+[![Maintained](https://img.shields.io/badge/Maintained-yes-2ea44f)](https://github.com/ktalons/bashedlogs/graphs/commit-activity)
+[![License: MIT](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](https://opensource.org/licenses/MIT)
 
 > 🦉 A fast, intelligent CLI tool for comprehensive cybersecurity log analysis with automatic format detection
 
