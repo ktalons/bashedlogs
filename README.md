@@ -134,40 +134,6 @@ Color-coded output with ASCII art, tables, and clear categorization for rapid as
 
 ---
 
-## 🛠️ Installation
-
-### **Manual Installation**
-
-Download script:
-```bash
-curl -O https://raw.githubusercontent.com/ktalons/bashedlogs/main/bashedlogs.sh
-```
-
-Make executable:
-```bash
-chmod +x bashedlogs.sh
-```
-
-Run:
-```bash
-./bashedlogs.sh start
-```
-
-### **System-wide Installation**
-
-Copy to system path:
-```bash
-sudo cp bashedlogs.sh /usr/local/bin/bashedlogs
-sudo chmod +x /usr/local/bin/bashedlogs
-```
-
-Run from anywhere:
-```bash
-bashedlogs /var/log/auth.log
-```
-
----
-
 ## 🎯 Use Cases
 
 - **Security Audits** - Analyze server logs for breach indicators
