@@ -233,4 +233,23 @@ cat > "$FIX/iocs/sample.log" <<'EOF'
 2025-06-12T20:00:06Z dns INFO query c2.badhost.example.org from 192.0.2.44
 EOF
 
+mkdir -p "$FIX/hostile"
+
+# hostile/injection.log: log content is attacker-controlled, so this fixture
+# carries quotes, backslashes, shell metacharacters, printf specifiers, unicode,
+# a literal tab, and glob characters inside usernames. Output must stay valid
+# JSON and nothing here may ever be executed or expanded.
+{
+  printf 'Jun  1 10:00:00 h sshd[1]: Failed password for invalid user "quote\\back\\\\slash from 203.0.113.66 port 1 ssh2\n'
+  # shellcheck disable=SC2016  # the point is that these stay literal, unexpanded
+  printf 'Jun  1 10:00:01 h sshd[2]: Failed password for invalid user $(id)`whoami`;rm -rf / from 203.0.113.66 port 2 ssh2\n'
+  printf 'Jun  1 10:00:02 h sshd[3]: Failed password for invalid user %%s%%s%%n%%d from 203.0.113.66 port 3 ssh2\n'
+  printf 'Jun  1 10:00:03 h sshd[4]: Failed password for invalid user \xc3\xbcn\xc3\xafcod\xc3\xa9 from 203.0.113.66 port 4 ssh2\n'
+  printf 'Jun  1 10:00:04 h sshd[5]: Failed password for invalid user tab\tsep from 203.0.113.66 port 5 ssh2\n'
+  printf 'Jun  1 10:00:05 h sshd[6]: Failed password for invalid user */?[a-z]* from 203.0.113.66 port 6 ssh2\n'
+  for i in 6 7 8 9 10 11 12 13 14 15 16 17; do
+    printf 'Jun  1 10:00:%02d h sshd[%d]: Failed password for root from 203.0.113.66 port %d ssh2\n' "$i" "$i" "$i"
+  done
+} > "$FIX/hostile/injection.log"
+
 echo "fixtures written under $FIX"

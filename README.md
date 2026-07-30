@@ -1,161 +1,157 @@
 # bashedlogs
 
+[![ci](https://github.com/ktalons/bashedlogs/actions/workflows/ci.yml/badge.svg)](https://github.com/ktalons/bashedlogs/actions/workflows/ci.yml)
 [![Bash 4.0+](https://img.shields.io/badge/Bash-4.0%2B-4EAA25?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
-[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](https://github.com/ktalons/bashedlogs) [![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://github.com/ktalons/bashedlogs)
+[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](https://github.com/ktalons/bashedlogs)
+[![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://github.com/ktalons/bashedlogs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](https://opensource.org/licenses/MIT)
 
-> 🦉 A fast, intelligent CLI tool for comprehensive cybersecurity log analysis with automatic format detection
+Security log triage in one bash file. Point it at a log, it works out the
+format, and it tells you what is worth looking at.
 
----
+## Install
 
-## 🚧 Status
+One file, nothing to build:
 
-**v1.0.0** is the original single-file release: functional, zero-dependency, built around the log formats I kept meeting in CTF work. A ground-up **v2 rewrite** is in progress on this repo: modular source with a single-file release artifact, SOC-focused analyzers (journald, Wazuh alerts, firewall), JSON/NDJSON output with a real exit-code contract, time-windowed brute-force detection, shellcheck-clean and bats-tested with CI.
+```bash
+curl -LO https://github.com/ktalons/bashedlogs/releases/latest/download/bashedlogs && chmod +x bashedlogs
+```
 
----
+Needs bash 4.0+ and standard `awk`/`grep`/`sort`. macOS ships bash 3.2 at
+`/bin/bash`, so `brew install bash` first.
 
-## 📋 Quick Start
+## Use
 
-Clone the repository:
+Auto-detect and report:
+
+```bash
+./bashedlogs /var/log/auth.log
+```
+
+```
+bashedlogs v2.0.0
+  file    /var/log/auth.log
+  format  auth_ssh
+
+Metrics
+  total_lines                  21
+  failed_auth                  12
+  top_attacking_ips            203.0.113.66 (12)
+  targeted_users               admin (4), oracle (3), root (3)
+
+Findings (3)
+  critical possible-compromise successful login for 'admin' from 203.0.113.66 shortly after a brute-force burst from the same IP
+  high     brute-force      12 failed logins from 203.0.113.66 within 40s (threshold: 10 in 60s)
+  medium   root-attempts    3 failed login attempt(s) targeting root
+
+Threat score  25/100 (high)
+```
+
+JSON for anything downstream:
+
+```bash
+./bashedlogs -o json /var/log/auth.log | jq '.findings[] | select(.severity=="critical")'
+```
+
+Pull IOCs out, defanged for a ticket:
+
+```bash
+./bashedlogs --iocs --defang -o json alerts.json | jq -r '.iocs.ips[]'
+```
+
+Fail a cron job or CI step when something real shows up:
+
+```bash
+./bashedlogs --fail-level high -o json /var/log/auth.log || echo "escalate"
+```
+
+Read from a pipe:
+
+```bash
+journalctl -u sshd -o short-iso | ./bashedlogs -
+```
+
+Tune the brute-force window (default 10 failures in 60s):
+
+```bash
+./bashedlogs --bf-threshold 5 --bf-window 300 /var/log/auth.log
+```
+
+## Formats
+
+| Format | What it covers |
+|---|---|
+| `auth_ssh` | sshd and PAM auth: windowed brute force, compromise heuristic, user enumeration |
+| `journald` | `journalctl -o short-iso` and `-o json` exports |
+| `syslog` | classic syslog: OOM kills, segfaults, panics, sudo failures |
+| `web_access` | Apache and NGINX access logs: status mix, scanners, injection probes |
+| `wazuh_alerts` | Wazuh `alerts.json`: level histogram, top rules and agents, MITRE ids |
+| `dns_route53` | Route53 query logs: NXDOMAIN rate, tunneling heuristics |
+| `firewall` | iptables and pfSense filterlog: port scans, repeat offenders |
+| `generic` | fallback heuristics for anything unrecognized, and it says so |
+
+`--list-formats` prints these. `--format <name>` skips detection. `--strict`
+exits 2 instead of falling back to `generic`.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | analyzed, nothing at or above `--fail-level` |
+| 1 | usage or runtime error |
+| 2 | input unreadable, or `--strict` and detection failed |
+| 3 | findings at or above `--fail-level` |
+
+## Enrichment
+
+Off by default, and **no network call is made unless you ask for one**.
+
+Offline GeoIP and ASN, using your own GeoLite2 databases and `mmdblookup`:
+
+```bash
+./bashedlogs --iocs --mmdb-dir ~/geoip -o json access.log
+```
+
+Online ASN (Team Cymru) and reverse DNS, explicitly opted into:
+
+```bash
+./bashedlogs --iocs --enrich-online -o json access.log
+```
+
+With neither available the report says enrichment was skipped and everything
+else still works.
+
+## Development
+
 ```bash
 git clone https://github.com/ktalons/bashedlogs.git
 cd bashedlogs
+shellcheck -x bin/bashedlogs lib/core/*.sh lib/formats/*.sh tools/*.sh
+bats tests/
+tools/build.sh                 # -> dist/bashedlogs, the single-file artifact
 ```
 
-Make executable:
-```bash
-chmod +x bashedlogs.sh
-```
+`bats-core` and `jq` are test-only dependencies. The runtime has none.
 
-Interactive mode:
-```bash
-./bashedlogs.sh start
-```
+Adding a format means one file in `lib/formats/` that calls
+`register_format`, then defines `<name>_detect` (reads `$SAMPLE`, echoes a
+0-100 confidence) and `<name>_analyze <file>` (emits findings with
+`report_add <severity> <category> <message> [key=value ...]`). Fixtures go in
+`tests/fixtures/<name>/` via `tools/mkfixtures.sh` so nothing real gets
+committed.
 
-Direct analysis (auto-detect format):
-```bash
-./bashedlogs.sh /path/to/logfile.log
-```
+Every claim in this README maps to a test in [docs/CLAIMS.md](docs/CLAIMS.md).
 
-Explicit format specification:
-```bash
-./bashedlogs.sh /path/to/auth.log auth_ssh
-```
+## History
 
----
+v1 was a single 3,682-line script covering ~30 formats, written fast and never
+tested. v2 is a rewrite: real detections instead of keyword counts, structured
+output, and CI. The CTF-oriented v1 analyzers (payments, IoT telemetry,
+Android logcat, SQLite, Squid, VSFTPD) were dropped to keep this a SOC triage
+tool. They are still at tag
+[v1.0.0](https://github.com/ktalons/bashedlogs/tree/v1.0.0). See
+[CHANGELOG.md](CHANGELOG.md).
 
-## 💡 Usage
+## License
 
-### **Interactive Mode**
-```bash
-./bashedlogs.sh start
-```
-Launches an interactive session with format selection and guided analysis.
-
-### **Direct Analysis**
-
-Auto-detect log format:
-```bash
-./bashedlogs.sh access.log
-```
-
-Specify format explicitly:
-```bash
-./bashedlogs.sh auth.log auth_ssh
-./bashedlogs.sh access.log access_log
-./bashedlogs.sh route53.log route53
-```
-
-### **Supported Log Formats**
-- **SSH/Auth Logs** (`auth_ssh`) - Authentication attempts, SSH sessions
-- **Web Servers** (`access_log`) - Apache/NGINX access logs
-- **DNS** (`route53`) - AWS Route53 DNS query logs
-- **IoT Devices** (`devices`) - Smart device telemetry and status
-- **Mobile/Android** (`android_system`) - Android system logs
-- **Login Attempts** (`login_attempts`) - Failed/successful login tracking
-- **SQLite** (`sqlite`) - SQLite database logs
-- **FTP** (`vsftpd`) - VSFTPD server logs
-- **Proxy** (`squid`) - Squid proxy access logs
-- **Payments** (`payments`) - Payment transaction logs
-- **Generic** - Fallback analyzer for unrecognized formats
-
-**Also detected** (routed to the generic security analyzer rather than a dedicated one): Firewall (iptables, pfSense, Cisco ASA), IDS/IPS (Snort, Suricata), Email (Postfix, SMTP), VPN (OpenVPN), Databases (MySQL, PostgreSQL, MongoDB), Docker, Kubernetes, HAProxy, ModSecurity WAF, DHCP, CSV, and JSON formats.
-
----
-
-## 🔍 Executive Summary
-
-**bashedlogs** is a comprehensive bash-based log analysis framework designed for cybersecurity professionals, CTF competitors, and system administrators. The tool provides:
-
-### **Core Capabilities**
-- **Intelligent Format Detection** - Automatically identifies 30+ log formats using pattern matching and heuristics
-- **Security Risk Assessment** - Calculates threat scores and provides actionable security recommendations
-- **Rich Metrics & Statistics** - Extracts detailed insights including top IPs, error patterns, authentication events, and temporal analysis
-- **Multi-Domain Support** - Analyzes logs from web servers, DNS, firewalls, databases, containers, IoT devices, mobile systems, and more
-- **Zero Dependencies** - Pure bash implementation using standard Unix tools (awk, grep, sed)
-
-### **Major Functions**
-
-#### **1. Format Detection Engine**
-Analyzes log structure and content patterns to automatically identify the log type. Supports explicit format override for edge cases.
-
-#### **2. Specialized Analyzers**
-Core formats have dedicated analyzers with format-specific metrics; other detected formats route to a generic security analyzer:
-- **DNS Analysis** - Query patterns, domain rankings, NXDOMAIN detection, DNS tunneling indicators
-- **IoT Analysis** - Device health, battery monitoring, sensor anomalies, connectivity issues
-- **Mobile Analysis** - Biometric auth, battery timeline, WiFi signal strength, app security events
-- **Web Analysis** - HTTP status codes, top URLs, traffic volume, 404 analysis
-- **Authentication Analysis** - Failed logins, brute force detection, privilege escalation attempts
-
-#### **3. Security Threat Assessment**
-Calculates risk scores based on:
-- Attack pattern detection (SQL injection, XSS, path traversal)
-- Authentication failures and brute force indicators
-- Network anomalies and suspicious activities
-- Error rates and system instability signals
-- Format-specific threat models
-
-#### **4. Visual Reporting**
-Color-coded output with ASCII art, tables, and clear categorization for rapid assessment.
-
----
-
-## 📸 Screenshots
-
-### Splash Screen & Help
-![Splash Screen](splash.png)
-
-### Interactive Mode
-![Interactive Mode](interactive.png)
-
----
-
-## 📦 Requirements
-
-- **Bash** 4.0 or higher
-- Standard Unix utilities: `awk`, `grep`, `sed`, `sort`, `uniq`, `wc`, `head`, `tail`
-- Optional: `bc` (for percentage calculations)
-- Optional: `file` command (for SQLite detection)
-
----
-
-## 🎯 Use Cases
-
-- **Security Audits** - Analyze server logs for breach indicators
-- **CTF Challenges** - Quickly parse and extract forensic evidence
-- **Incident Response** - Identify attack patterns and timelines
-- **System Monitoring** - Track authentication failures and errors
-- **Compliance** - Generate security reports from log data
-- **IoT Security** - Monitor device health and detect anomalies
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT. See [LICENSE](LICENSE).
