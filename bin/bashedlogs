@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # shellcheck disable=SC2034  # read by lib/core (cli --version, output emitters)
-BASHEDLOGS_VERSION="2.0.0-dev"
+BASHEDLOGS_VERSION="2.0.0"
 
 # Bash floor guard. Runs before anything else so bash 3.2 (stock macOS) gets a
 # clear message instead of a parse error from 4.0-only syntax further down.

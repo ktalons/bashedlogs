@@ -23,3 +23,18 @@ resume.
 | shellcheck-clean | README badge | `lint` CI job, `shellcheck -x` must exit 0 on the tree; `build` job also lints the artifact |
 | Tested on Linux and macOS | README badge | `test-linux` and `test-macos` CI jobs run the full suite on both userlands |
 | Single-file install | README | `build` CI job builds `dist/bashedlogs` and reruns the whole suite against it |
+| Counts one attempt once on dual-logging hosts | CHANGELOG | `tests/regressions.bats` — Debian sshd+PAM fixture reports 3, not 6 |
+| IPv4 and IPv6 both detected | CHANGELOG | `tests/regressions.bats` — IPv6 burst alerts; validator accepts 5 real forms and rejects 7 malformed |
+| ICMP contributes no ports | CHANGELOG | `tests/regressions.bats` — ICMP fixture yields only real tcp ports |
+| Alerts attributed to the affected host | CHANGELOG | `tests/regressions.bats` — `agent.name` wins over `manager.name` |
+| Untrusted log content cannot execute or corrupt output | README (implicit) | `tests/hostile.bats` — shell metacharacters, printf specifiers, globs, unicode, CRLF, no trailing newline |
+| No analyzer aborts on mismatched input | — | `tests/robustness.bats` — all 8 analyzers over every fixture, plus empty and junk files |
+
+## Audit note
+
+The defects in the table's lower half were found by a cross-vendor review
+before v2.0.0 was tagged, not by the test suite. Two of them were invisible
+because the fixtures were unrealistically clean: the Wazuh fixture had no
+`manager.name` sibling field, so nothing exercised the misattribution. Fixtures
+now carry the sibling fields real logs have, and each fixed defect has a
+regression test naming what the tool used to report.

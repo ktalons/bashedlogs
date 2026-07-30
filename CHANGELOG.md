@@ -39,6 +39,27 @@ tree that still ships as a single portable file.
 - Removed an unreachable duplicate web-log analyzer (v1 dispatched web logs to
   a different function than the one that parsed them).
 
+### Fixed in pre-release audit
+
+A cross-vendor review before tagging found five real defects, all fixed with a
+regression test each:
+
+- Debian and Ubuntu sshd log both a `pam_unix` line and a `Failed password`
+  line for a single failed attempt. Counting both reported double the real
+  failures and alerted at roughly half the configured `--bf-threshold`. sshd's
+  own line is now authoritative; PAM lines are used only when a log contains no
+  sshd failure lines, and any skipped duplicates are disclosed in the report.
+- IPv6 sources were invisible to every per-source detector. Failures were
+  counted in the totals but produced no finding, which reads as "no attack".
+  Address validation is now shared across analyzers and handles IPv6.
+- ICMP firewall events have no ports, so the fields after source and
+  destination are type and code. Those were being reported as ports; port
+  extraction is now gated on tcp/udp.
+- Wazuh alerts carry `manager.name` and `decoder.name` alongside `agent.name`,
+  so a bare field lookup attributed every alert to the Wazuh server instead of
+  the affected host. Lookups are now path-aware.
+- Rule descriptions containing an escaped quote were truncated at the escape.
+
 ### Changed
 
 - shellcheck-clean (v1 had 572 findings) and enforced in CI.
