@@ -1,0 +1,5 @@
+2025-06-01T09:00:01Z appsvc INFO service started version=4.2.1
+2025-06-01T09:00:02Z appsvc INFO request id=900 client=203.0.113.7 path=/api/health status=200
+2025-06-01T09:00:03Z appsvc INFO request id=901 client=203.0.113.7 path=/api/items status=200
+2025-06-01T09:00:04Z appsvc INFO request id=902 client=198.51.100.23 path=/api/items status=200
+2025-06-01T09:00:05Z appsvc INFO heartbeat ok version=4.2.1 build=20250601

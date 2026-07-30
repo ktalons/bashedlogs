@@ -1,5 +1,9 @@
-# Log files
+# Log files (committed test fixtures are the exception)
 *.log
+!tests/fixtures/**/*.log
+
+# Build artifact (attached to releases, never committed)
+dist/
 
 # Test data
 test_logs/

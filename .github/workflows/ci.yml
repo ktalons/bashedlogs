@@ -1,0 +1,108 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SHELLCHECK_VERSION: v0.11.0
+  BATS_VERSION: v1.11.1
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned shellcheck
+        run: |
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | tar -xJ
+          sudo cp "shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/
+          shellcheck --version
+      - name: shellcheck
+        run: shellcheck -x bin/bashedlogs lib/core/*.sh lib/formats/*.sh tools/*.sh
+      - name: bash -n
+        run: |
+          bash -n bin/bashedlogs
+          for f in lib/core/*.sh lib/formats/*.sh tools/*.sh; do bash -n "$f"; done
+
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned bats-core
+        run: |
+          git clone --depth 1 -b "${BATS_VERSION}" https://github.com/bats-core/bats-core.git "$RUNNER_TEMP/bats"
+          echo "$RUNNER_TEMP/bats/bin" >> "$GITHUB_PATH"
+      - name: Run suite (GNU userland, bash 5)
+        run: |
+          bash --version | head -1
+          bats tests/
+
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install modern bash + bats
+        run: brew install bash bats-core
+      - name: Run suite (BSD userland, brew bash)
+        run: |
+          bash --version | head -1
+          bats tests/
+      - name: Stock bash 3.2 hits the version guard cleanly
+        run: |
+          set +e
+          out=$(/bin/bash bin/bashedlogs --version 2>&1)
+          code=$?
+          set -e
+          test "$code" -eq 1
+          echo "$out" | grep -q "bash 4.0+ required"
+
+  floor-bash4:
+    # True floor check: bash 4.0 + busybox userland (awk/sort/head portability).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build artifact
+        run: tools/build.sh
+      - name: Tree + artifact run under bash 4.0 / busybox
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo bash:4.0 bash -ec '
+            bash --version | head -1
+            ./bin/bashedlogs -o json tests/fixtures/generic/mixed.log | grep -q "\"format\":\"generic\""
+            ./dist/bashedlogs -o json tests/fixtures/generic/mixed.log | grep -q "\"threat\""
+            rc=0; ./dist/bashedlogs --fail-level high tests/fixtures/generic/mixed.log >/dev/null || rc=$?
+            test "$rc" -eq 3
+            ./dist/bashedlogs --fail-level low tests/fixtures/generic/clean.log >/dev/null
+          '
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned shellcheck
+        run: |
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | tar -xJ
+          sudo cp "shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/
+      - name: Install pinned bats-core
+        run: |
+          git clone --depth 1 -b "${BATS_VERSION}" https://github.com/bats-core/bats-core.git "$RUNNER_TEMP/bats"
+          echo "$RUNNER_TEMP/bats/bin" >> "$GITHUB_PATH"
+      - name: Build single-file artifact
+        run: tools/build.sh
+      - name: shellcheck the artifact
+        run: shellcheck dist/bashedlogs
+      - name: Run full suite against the artifact
+        run: BASHEDLOGS_UNDER_TEST="$PWD/dist/bashedlogs" bats tests/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bashedlogs-single-file
+          path: dist/bashedlogs

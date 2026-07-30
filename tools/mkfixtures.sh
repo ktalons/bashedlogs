@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# mkfixtures.sh - regenerate the committed test fixtures under tests/fixtures/
+# All fixtures are synthetic and deterministic: fixed timestamps, RFC 5737 /
+# private IPs, invented hostnames. No real-world log data is ever committed.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FIX="$ROOT/tests/fixtures"
+
+mkdir -p "$FIX/generic"
+
+# generic/mixed.log: app-style log that should stay in the generic analyzer
+# and produce auth-failure, injection, and traversal findings.
+cat > "$FIX/generic/mixed.log" <<'EOF'
+2025-06-01T10:00:01Z appsvc INFO request id=1001 client=203.0.113.7 path=/api/health status=200
+2025-06-01T10:00:02Z appsvc INFO request id=1002 client=203.0.113.7 path=/api/items status=200
+2025-06-01T10:00:03Z appsvc WARN slow query id=1003 client=198.51.100.23 elapsed=2103ms
+2025-06-01T10:00:04Z appsvc ERROR upstream timeout id=1004 client=198.51.100.23 path=/api/items status=502
+2025-06-01T10:00:05Z appsvc INFO request id=1005 client=203.0.113.7 path=/api/items?q=union+select+password+from+users status=400
+2025-06-01T10:00:06Z appsvc INFO request id=1006 client=192.0.2.44 path=/download?file=../../etc/passwd status=403
+2025-06-01T10:00:07Z appsvc INFO request id=1007 client=192.0.2.44 path=/search?q=<script>alert(1)</script> status=400
+2025-06-01T10:00:08Z appsvc INFO login attempt user=admin client=192.0.2.44 result=failed password
+2025-06-01T10:00:09Z appsvc INFO login attempt user=admin client=192.0.2.44 result=failed password
+2025-06-01T10:00:10Z appsvc INFO login attempt user=svc_backup client=203.0.113.7 result=access denied
+2025-06-01T10:00:11Z appsvc INFO request id=1008 client=203.0.113.7 path=/api/items status=200
+2025-06-01T10:00:12Z appsvc ERROR disk usage 91 percent on /var
+2025-06-01T10:00:13Z appsvc INFO request id=1009 client=198.51.100.23 path=/api/items status=200
+2025-06-01T10:00:14Z appsvc INFO request id=1010 client=203.0.113.7 path=/api/items status=200
+2025-06-01T10:00:15Z appsvc INFO heartbeat ok version=4.2.1 build=20250601
+EOF
+
+# generic/clean.log: boring healthy log; zero findings, exit 0 even with
+# --fail-level low.
+cat > "$FIX/generic/clean.log" <<'EOF'
+2025-06-01T09:00:01Z appsvc INFO service started version=4.2.1
+2025-06-01T09:00:02Z appsvc INFO request id=900 client=203.0.113.7 path=/api/health status=200
+2025-06-01T09:00:03Z appsvc INFO request id=901 client=203.0.113.7 path=/api/items status=200
+2025-06-01T09:00:04Z appsvc INFO request id=902 client=198.51.100.23 path=/api/items status=200
+2025-06-01T09:00:05Z appsvc INFO heartbeat ok version=4.2.1 build=20250601
+EOF
+
+echo "fixtures written under $FIX"
