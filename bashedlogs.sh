@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# bashedlogs.sh - Enhanced Cybersecurity Log Analyzer
-# Author: Enhanced version for comprehensive log analysis
+# bashedlogs.sh - Cybersecurity Log Analyzer
+# Author: Kyle Versluis (@ktalons)
 # Usage: ./bashedlogs.sh [logfile] [format]
 
 set -euo pipefail

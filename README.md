@@ -2,10 +2,15 @@
 
 [![Bash 4.0+](https://img.shields.io/badge/Bash-4.0%2B-4EAA25?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](https://github.com/ktalons/bashedlogs) [![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://github.com/ktalons/bashedlogs)
-[![Maintained](https://img.shields.io/badge/Maintained-yes-2ea44f)](https://github.com/ktalons/bashedlogs/graphs/commit-activity)
 [![License: MIT](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](https://opensource.org/licenses/MIT)
 
 > 🦉 A fast, intelligent CLI tool for comprehensive cybersecurity log analysis with automatic format detection
+
+---
+
+## 🚧 Status
+
+**v1.0.0** is the original single-file release: functional, zero-dependency, built around the log formats I kept meeting in CTF work. A ground-up **v2 rewrite** is in progress on this repo: modular source with a single-file release artifact, SOC-focused analyzers (journald, Wazuh alerts, firewall), JSON/NDJSON output with a real exit-code contract, time-windowed brute-force detection, shellcheck-clean and bats-tested with CI.
 
 ---
 
@@ -74,7 +79,7 @@ Specify format explicitly:
 - **Payments** (`payments`) - Payment transaction logs
 - **Generic** - Fallback analyzer for unrecognized formats
 
-**Plus support for:** Firewall (iptables, pfSense, Cisco ASA), IDS/IPS (Snort, Suricata), Email (Postfix, SMTP), VPN (OpenVPN), Databases (MySQL, PostgreSQL, MongoDB), Docker, Kubernetes, HAProxy, ModSecurity WAF, DHCP, CSV, and JSON formats.
+**Also detected** (routed to the generic security analyzer rather than a dedicated one): Firewall (iptables, pfSense, Cisco ASA), IDS/IPS (Snort, Suricata), Email (Postfix, SMTP), VPN (OpenVPN), Databases (MySQL, PostgreSQL, MongoDB), Docker, Kubernetes, HAProxy, ModSecurity WAF, DHCP, CSV, and JSON formats.
 
 ---
 
@@ -95,7 +100,7 @@ Specify format explicitly:
 Analyzes log structure and content patterns to automatically identify the log type. Supports explicit format override for edge cases.
 
 #### **2. Specialized Analyzers**
-Each log format has a dedicated analyzer with format-specific metrics:
+Core formats have dedicated analyzers with format-specific metrics; other detected formats route to a generic security analyzer:
 - **DNS Analysis** - Query patterns, domain rankings, NXDOMAIN detection, DNS tunneling indicators
 - **IoT Analysis** - Device health, battery monitoring, sensor anomalies, connectivity issues
 - **Mobile Analysis** - Biometric auth, battery timeline, WiFi signal strength, app security events
