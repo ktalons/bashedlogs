@@ -177,4 +177,60 @@ cat > "$FIX/web/quiet.log" <<'EOF'
 198.51.100.23 - - [11/Jun/2025:09:04:30 -0700] "POST /api/contact HTTP/1.1" 200 310 "-" "Mozilla/5.0"
 EOF
 
+mkdir -p "$FIX/wazuh" "$FIX/dns" "$FIX/firewall" "$FIX/iocs"
+
+# wazuh/alerts.json: level histogram spanning low/mid/high/critical, MITRE ids,
+# and one srcip clustering enough alerts to trip the cluster finding.
+cat > "$FIX/wazuh/alerts.json" <<'EOF'
+{"timestamp":"2025-06-12T10:00:01.000-0700","agent":{"id":"001","name":"web-01"},"rule":{"level":3,"description":"Successful sudo to ROOT executed","id":"5402","mitre":{"id":["T1548.003"]}},"data":{"srcuser":"kyle"}}
+{"timestamp":"2025-06-12T10:00:20.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:00:25.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:00:30.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:00:35.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:00:40.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:00:45.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:00:50.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:00:55.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:01:00.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:01:05.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":10,"description":"sshd: brute force trying to get access to the system","id":"5712","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:02:00.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":10,"description":"Multiple authentication failures followed by a success","id":"40112","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"timestamp":"2025-06-12T10:15:00.000-0700","agent":{"id":"001","name":"web-01"},"rule":{"level":12,"description":"Integrity checksum changed for /etc/shadow","id":"550","mitre":{"id":["T1565.001"]}},"data":{}}
+{"timestamp":"2025-06-12T10:20:00.000-0700","agent":{"id":"003","name":"db-01"},"rule":{"level":7,"description":"Web server 400 error code","id":"31101","mitre":{"id":["T1190"]}},"data":{"srcip":"192.0.2.15"}}
+{"timestamp":"2025-06-12T10:25:00.000-0700","agent":{"id":"003","name":"db-01"},"rule":{"level":2,"description":"Windows logon success","id":"18107"},"data":{}}
+EOF
+
+# dns/route53.log: normal traffic plus one tunneling-shaped long TXT query.
+cat > "$FIX/dns/route53.log" <<'EOF'
+1.0 2025-06-12T17:00:01Z Z1D633PJN98FT9 www.example.com A NOERROR UDP FRA6 192.0.2.10 -
+1.0 2025-06-12T17:00:05Z Z1D633PJN98FT9 api.example.com A NOERROR UDP FRA6 192.0.2.10 -
+1.0 2025-06-12T17:00:09Z Z1D633PJN98FT9 cdn.example.com CNAME NOERROR UDP IAD79 192.0.2.11 -
+1.0 2025-06-12T17:00:12Z Z1D633PJN98FT9 mail.example.com MX NOERROR UDP IAD79 192.0.2.11 -
+1.0 2025-06-12T17:00:15Z Z1D633PJN98FT9 www.example.com A NOERROR UDP FRA6 192.0.2.10 -
+1.0 2025-06-12T17:00:20Z Z1D633PJN98FT9 nope.example.com A NXDOMAIN UDP FRA6 192.0.2.10 -
+1.0 2025-06-12T17:00:25Z Z1D633PJN98FT9 gone.example.com A NXDOMAIN UDP FRA6 192.0.2.10 -
+1.0 2025-06-12T17:00:30Z Z1D633PJN98FT9 aGVsbG90aGlzaXNhdGVzdG9mZG5zdHVubmVsaW5nZGF0YWV4ZmlsMDAx.tunnel.example.net TXT NOERROR UDP FRA6 192.0.2.10 -
+1.0 2025-06-12T17:00:31Z Z1D633PJN98FT9 www.example.com A NOERROR UDP FRA6 192.0.2.10 -
+1.0 2025-06-12T17:00:35Z Z1D633PJN98FT9 api.example.com A NOERROR UDP IAD79 192.0.2.11 -
+EOF
+
+# firewall/mixed.log: iptables port scan (12 distinct ports) + pfSense blocks.
+{
+  for port in 21 22 23 25 80 110 143 443 445 3306 3389 8080; do
+    printf 'Jun 12 18:%02d:00 gw kernel: [12345.678] iptables: IN=eth0 OUT= MAC=00:11:22:33:44:55 SRC=203.0.113.77 DST=198.51.100.5 LEN=60 PROTO=TCP SPT=44444 DPT=%s WINDOW=1024 SYN DROP\n' "$((port % 60))" "$port"
+  done
+  echo 'Jun 12 18:30:00 gw filterlog[2100]: 5,,,1000000103,igb0,match,block,in,4,0x0,,64,12345,0,DF,6,tcp,60,192.0.2.88,198.51.100.5,55001,22,0,S,1,,1024'
+  echo 'Jun 12 18:30:05 gw filterlog[2100]: 5,,,1000000103,igb0,match,block,in,4,0x0,,64,12346,0,DF,6,tcp,60,192.0.2.88,198.51.100.5,55002,22,0,S,1,,1024'
+  echo 'Jun 12 18:31:00 gw filterlog[2100]: 5,,,1000000104,igb0,match,pass,in,4,0x0,,64,12400,0,DF,6,tcp,60,198.51.100.23,198.51.100.5,55100,443,0,S,1,,1024'
+} > "$FIX/firewall/mixed.log"
+
+# iocs/sample.log: known IOC set, exact counts asserted in tests.
+cat > "$FIX/iocs/sample.log" <<'EOF'
+2025-06-12T20:00:01Z proxy INFO client=203.0.113.66 fetched http://malware.example.net/payload.bin
+2025-06-12T20:00:02Z proxy INFO client=198.51.100.23 fetched https://cdn.example.com/app.js
+2025-06-12T20:00:03Z scanner INFO file quarantined md5=d41d8cd98f00b204e9800998ecf8427e
+2025-06-12T20:00:04Z scanner INFO file quarantined sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+2025-06-12T20:00:05Z scanner INFO file quarantined sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+2025-06-12T20:00:06Z dns INFO query c2.badhost.example.org from 192.0.2.44
+EOF
+
 echo "fixtures written under $FIX"

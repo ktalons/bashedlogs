@@ -1,0 +1,6 @@
+2025-06-12T20:00:01Z proxy INFO client=203.0.113.66 fetched http://malware.example.net/payload.bin
+2025-06-12T20:00:02Z proxy INFO client=198.51.100.23 fetched https://cdn.example.com/app.js
+2025-06-12T20:00:03Z scanner INFO file quarantined md5=d41d8cd98f00b204e9800998ecf8427e
+2025-06-12T20:00:04Z scanner INFO file quarantined sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
+2025-06-12T20:00:05Z scanner INFO file quarantined sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+2025-06-12T20:00:06Z dns INFO query c2.badhost.example.org from 192.0.2.44

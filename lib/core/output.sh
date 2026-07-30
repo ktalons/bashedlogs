@@ -82,8 +82,41 @@ metrics_to_json() {
   printf '{%s}' "$out"
 }
 
+# json_str_array [values...]: JSON array of defanged, escaped strings.
+json_str_array() {
+  local out="" v
+  for v in "$@"; do
+    if [ -n "$out" ]; then out="$out,"; fi
+    out="$out\"$(json_escape "$(maybe_defang "$v")")\""
+  done
+  printf '[%s]' "$out"
+}
+
+iocs_to_json() {
+  printf '{"ips":%s,"domains":%s,"urls":%s,"hashes":{"md5":%s,"sha1":%s,"sha256":%s},"enrichment":{"status":"%s","results":%s}}' \
+    "$(json_str_array ${IOC_IPS[@]+"${IOC_IPS[@]}"})" \
+    "$(json_str_array ${IOC_DOMAINS[@]+"${IOC_DOMAINS[@]}"})" \
+    "$(json_str_array ${IOC_URLS[@]+"${IOC_URLS[@]}"})" \
+    "$(json_str_array ${IOC_MD5[@]+"${IOC_MD5[@]}"})" \
+    "$(json_str_array ${IOC_SHA1[@]+"${IOC_SHA1[@]}"})" \
+    "$(json_str_array ${IOC_SHA256[@]+"${IOC_SHA256[@]}"})" \
+    "$(json_escape "$ENRICH_STATUS")" \
+    "$(enrichment_results_json)"
+}
+
+enrichment_results_json() {
+  local out="" i
+  if [ "${#E_IP[@]}" -gt 0 ]; then
+    for i in "${!E_IP[@]}"; do
+      if [ -n "$out" ]; then out="$out,"; fi
+      out="$out\"$(json_escape "$(maybe_defang "${E_IP[$i]}")")\":\"$(json_escape "${E_TXT[$i]}")\""
+    done
+  fi
+  printf '{%s}' "$out"
+}
+
 emit_json() {
-  local file=$1 fmt=$2 score level findings="" i
+  local file=$1 fmt=$2 score level findings="" iocs="" i
   score=$(threat_score)
   level=$(threat_level "$score")
   if [ "${#R_SEV[@]}" -gt 0 ]; then
@@ -92,13 +125,39 @@ emit_json() {
       findings="$findings$(finding_to_json "$i")"
     done
   fi
-  printf '{"tool":"bashedlogs","version":"%s","file":"%s","format":"%s","metrics":%s,"findings":[%s],"threat":{"score":%s,"level":"%s"}}\n' \
+  if [ "$DO_IOCS" -eq 1 ]; then
+    iocs=",\"iocs\":$(iocs_to_json)"
+  fi
+  printf '{"tool":"bashedlogs","version":"%s","file":"%s","format":"%s","metrics":%s,"findings":[%s],"threat":{"score":%s,"level":"%s"}%s}\n' \
     "$BASHEDLOGS_VERSION" \
     "$(json_escape "$file")" \
     "$fmt" \
     "$(metrics_to_json)" \
     "$findings" \
-    "$score" "$level"
+    "$score" "$level" \
+    "$iocs"
+}
+
+ndjson_ioc_lines() {
+  local v
+  for v in ${IOC_IPS[@]+"${IOC_IPS[@]}"}; do
+    printf '{"type":"ioc","kind":"ip","value":"%s"}\n' "$(json_escape "$(maybe_defang "$v")")"
+  done
+  for v in ${IOC_DOMAINS[@]+"${IOC_DOMAINS[@]}"}; do
+    printf '{"type":"ioc","kind":"domain","value":"%s"}\n' "$(json_escape "$(maybe_defang "$v")")"
+  done
+  for v in ${IOC_URLS[@]+"${IOC_URLS[@]}"}; do
+    printf '{"type":"ioc","kind":"url","value":"%s"}\n' "$(json_escape "$(maybe_defang "$v")")"
+  done
+  for v in ${IOC_MD5[@]+"${IOC_MD5[@]}"}; do
+    printf '{"type":"ioc","kind":"md5","value":"%s"}\n' "$(json_escape "$v")"
+  done
+  for v in ${IOC_SHA1[@]+"${IOC_SHA1[@]}"}; do
+    printf '{"type":"ioc","kind":"sha1","value":"%s"}\n' "$(json_escape "$v")"
+  done
+  for v in ${IOC_SHA256[@]+"${IOC_SHA256[@]}"}; do
+    printf '{"type":"ioc","kind":"sha256","value":"%s"}\n' "$(json_escape "$v")"
+  done
 }
 
 emit_ndjson() {
@@ -115,6 +174,9 @@ emit_ndjson() {
         "$(json_escape "${R_MSG[$i]}")" \
         "$(kv_to_json "${R_KV[$i]}")"
     done
+  fi
+  if [ "$DO_IOCS" -eq 1 ]; then
+    ndjson_ioc_lines
   fi
   printf '{"type":"summary","tool":"bashedlogs","version":"%s","file":"%s","format":"%s","metrics":%s,"findings":%s,"threat":{"score":%s,"level":"%s"}}\n' \
     "$BASHEDLOGS_VERSION" \
@@ -158,9 +220,44 @@ emit_pretty() {
   fi
   echo
 
+  if [ "$DO_IOCS" -eq 1 ]; then
+    printf '%s\n' "${C_BOLD}IOCs ($(ioc_total))${C_RESET}"
+    pretty_ioc_kind "ips" ${IOC_IPS[@]+"${IOC_IPS[@]}"}
+    pretty_ioc_kind "domains" ${IOC_DOMAINS[@]+"${IOC_DOMAINS[@]}"}
+    pretty_ioc_kind "urls" ${IOC_URLS[@]+"${IOC_URLS[@]}"}
+    pretty_ioc_kind "md5" ${IOC_MD5[@]+"${IOC_MD5[@]}"}
+    pretty_ioc_kind "sha1" ${IOC_SHA1[@]+"${IOC_SHA1[@]}"}
+    pretty_ioc_kind "sha256" ${IOC_SHA256[@]+"${IOC_SHA256[@]}"}
+    printf '  %-10s %s%s%s\n' "enrich" "$C_DIM" "$ENRICH_STATUS" "$C_RESET"
+    if [ "${#E_IP[@]}" -gt 0 ]; then
+      for i in "${!E_IP[@]}"; do
+        printf '    %-18s %s\n' "$(maybe_defang "${E_IP[$i]}")" "${E_TXT[$i]}"
+      done
+    fi
+    echo
+  fi
+
   local lvl_color
   lvl_color=$(sev_color "$level")
   printf '%s\n' "${C_BOLD}Threat score${C_RESET}  ${lvl_color}${score}/100 (${level})${C_RESET}"
+}
+
+# pretty_ioc_kind <label> [values...]: one wrapped line per kind, capped.
+pretty_ioc_kind() {
+  local label=$1
+  shift
+  if [ "$#" -eq 0 ]; then return 0; fi
+  local shown=0 line="" v
+  for v in "$@"; do
+    shown=$((shown + 1))
+    if [ "$shown" -gt 25 ]; then
+      line="$line +$(($# - 25)) more"
+      break
+    fi
+    if [ -n "$line" ]; then line="$line "; fi
+    line="$line$(maybe_defang "$v")"
+  done
+  printf '  %-10s %s\n' "$label" "$line"
 }
 
 emit_output() {

@@ -16,6 +16,10 @@ STRICT=0
 FAIL_LEVEL=""
 BF_THRESHOLD=10
 BF_WINDOW=60
+DO_IOCS=0
+DEFANG=0
+ENRICH_ONLINE=0
+MMDB_DIR="${BASHEDLOGS_MMDB_DIR:-}"
 CLEANUP_FILE=""
 
 usage() {
@@ -34,6 +38,12 @@ Options:
       --fail-level LVL  exit 3 when findings reach LVL (low|medium|high|critical)
       --bf-threshold N  brute-force window: alert at N failures (default 10)
       --bf-window SEC   brute-force sliding window in seconds (default 60)
+      --iocs            extract IOCs (IPs, domains, URLs, hashes)
+      --defang          defang IOC output (203[.]0[.]113[.]66, hxxp://)
+      --mmdb-dir DIR    GeoLite2 .mmdb directory for offline GeoIP/ASN
+                        enrichment of IOC IPs (BASHEDLOGS_MMDB_DIR env works too)
+      --enrich-online   allow online ASN (Team Cymru) and PTR lookups for IOC
+                        IPs; without this flag no network call is ever made
       --no-color        disable colors (NO_COLOR env is also honored)
       --version         print version and exit
   -h, --help            show this help
@@ -91,6 +101,13 @@ parse_args() {
           ''|0|*[!0-9]*) die_usage "--bf-window needs a positive integer" ;;
           *) BF_WINDOW=$2 ;;
         esac
+        shift 2 ;;
+      --iocs) DO_IOCS=1; shift ;;
+      --defang) DEFANG=1; shift ;;
+      --enrich-online) ENRICH_ONLINE=1; shift ;;
+      --mmdb-dir)
+        require_arg "$1" "$#"
+        MMDB_DIR=$2
         shift 2 ;;
       --no-color) COLOR_MODE="off"; shift ;;
       --version)
@@ -159,6 +176,10 @@ main() {
   fi
 
   "${fmt}_analyze" "$LOGFILE"
+  if [ "$DO_IOCS" -eq 1 ]; then
+    extract_iocs "$LOGFILE"
+    enrich_iocs
+  fi
   emit_output "$DISPLAY_FILE" "$fmt"
 
   if [ -n "$FAIL_LEVEL" ]; then

@@ -48,8 +48,33 @@ load test_helper
   [[ "$output" == *generic* ]]
 }
 
-@test "help does not advertise unimplemented flags" {
+@test "help documents every implemented flag" {
   run "$BL" --help
-  [[ "$output" != *"--iocs"* ]]
-  [[ "$output" != *"--enrich-online"* ]]
+  [ "$status" -eq 0 ]
+  for flag in --output --format --list-formats --strict --fail-level \
+              --bf-threshold --bf-window --iocs --defang --mmdb-dir \
+              --enrich-online --no-color --version; do
+    [[ "$output" == *"$flag"* ]] || {
+      echo "help is missing $flag" >&2
+      return 1
+    }
+  done
+}
+
+@test "help states that online lookups are opt-in" {
+  run "$BL" --help
+  [[ "$output" == *"no network call is ever made"* ]]
+}
+
+@test "every documented flag is accepted by the parser" {
+  run "$BL" --iocs --defang --enrich-online --bf-threshold 5 --bf-window 30 \
+      --mmdb-dir /nonexistent --no-color -o json "$FIXTURES/generic/clean.log"
+  [ "$status" -eq 0 ]
+}
+
+@test "zero and non-numeric brute-force values are rejected" {
+  run "$BL" --bf-threshold 0 "$FIXTURES/generic/clean.log"
+  [ "$status" -eq 1 ]
+  run "$BL" --bf-window abc "$FIXTURES/generic/clean.log"
+  [ "$status" -eq 1 ]
 }
