@@ -51,6 +51,5 @@ load test_helper
 @test "help does not advertise unimplemented flags" {
   run "$BL" --help
   [[ "$output" != *"--iocs"* ]]
-  [[ "$output" != *"--bf-threshold"* ]]
   [[ "$output" != *"--enrich-online"* ]]
 }

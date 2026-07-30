@@ -1,0 +1,21 @@
+Jun  1 09:58:11 bastion sshd[2188]: Accepted publickey for kyle from 198.51.100.7 port 50122 ssh2: RSA SHA256:aBcD
+Jun  1 09:58:11 bastion sshd[2188]: pam_unix(sshd:session): session opened for user kyle by (uid=0)
+Jun  1 10:00:00 bastion sshd[2201]: Invalid user admin from 203.0.113.66 port 44321
+Jun  1 10:00:00 bastion sshd[2201]: Failed password for invalid user admin from 203.0.113.66 port 44321 ssh2
+Jun  1 10:00:02 bastion sshd[2202]: Failed password for invalid user admin from 203.0.113.66 port 44322 ssh2
+Jun  1 10:00:05 bastion sshd[2203]: Failed password for invalid user admin from 203.0.113.66 port 44323 ssh2
+Jun  1 10:00:08 bastion sshd[2204]: Failed password for invalid user admin from 203.0.113.66 port 44324 ssh2
+Jun  1 10:00:11 bastion sshd[2205]: Invalid user oracle from 203.0.113.66 port 44325
+Jun  1 10:00:11 bastion sshd[2205]: Failed password for invalid user oracle from 203.0.113.66 port 44325 ssh2
+Jun  1 10:00:14 bastion sshd[2206]: Failed password for invalid user oracle from 203.0.113.66 port 44326 ssh2
+Jun  1 10:00:17 bastion sshd[2207]: Failed password for invalid user oracle from 203.0.113.66 port 44327 ssh2
+Jun  1 10:00:20 bastion sshd[2208]: Invalid user postgres from 203.0.113.66 port 44328
+Jun  1 10:00:20 bastion sshd[2208]: Failed password for invalid user postgres from 203.0.113.66 port 44328 ssh2
+Jun  1 10:00:25 bastion sshd[2209]: Failed password for invalid user postgres from 203.0.113.66 port 44329 ssh2
+Jun  1 10:00:30 bastion sshd[2210]: Failed password for root from 203.0.113.66 port 44330 ssh2
+Jun  1 10:00:35 bastion sshd[2211]: Failed password for root from 203.0.113.66 port 44331 ssh2
+Jun  1 10:00:40 bastion sshd[2212]: Failed password for root from 203.0.113.66 port 44332 ssh2
+Jun  1 10:01:30 bastion sshd[2215]: Accepted password for admin from 203.0.113.66 port 44340 ssh2
+Jun  1 10:01:30 bastion sshd[2215]: pam_unix(sshd:session): session opened for user admin by (uid=0)
+Jun  1 10:05:00 bastion sshd[2220]: Did not receive identification string from 192.0.2.200
+Jun  1 10:06:00 bastion sshd[2221]: Connection closed by 192.0.2.200 port 55001 [preauth]

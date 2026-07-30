@@ -1,0 +1,13 @@
+Jun  2 00:15:09 bastion sshd[3101]: Failed password for invalid user guest from 192.0.2.99 port 40001 ssh2
+Jun  2 02:40:18 bastion sshd[3110]: Failed password for invalid user guest from 192.0.2.99 port 40002 ssh2
+Jun  2 05:05:27 bastion sshd[3122]: Failed password for invalid user guest from 192.0.2.99 port 40003 ssh2
+Jun  2 07:30:36 bastion sshd[3135]: Failed password for invalid user guest from 192.0.2.99 port 40004 ssh2
+Jun  2 08:12:00 bastion sshd[3140]: Accepted publickey for kyle from 198.51.100.7 port 50188 ssh2: RSA SHA256:aBcD
+Jun  2 08:12:00 bastion sshd[3140]: pam_unix(sshd:session): session opened for user kyle by (uid=0)
+Jun  2 09:55:45 bastion sshd[3149]: Failed password for invalid user guest from 192.0.2.99 port 40005 ssh2
+Jun  2 12:20:54 bastion sshd[3160]: Failed password for invalid user guest from 192.0.2.99 port 40006 ssh2
+Jun  2 14:45:03 bastion sshd[3171]: Failed password for invalid user guest from 192.0.2.99 port 40007 ssh2
+Jun  2 17:10:12 bastion sshd[3182]: Failed password for invalid user guest from 192.0.2.99 port 40008 ssh2
+Jun  2 18:30:00 bastion sshd[3188]: pam_unix(sshd:session): session closed for user kyle
+Jun  2 19:35:21 bastion sshd[3193]: Failed password for invalid user guest from 192.0.2.99 port 40009 ssh2
+Jun  2 23:45:30 bastion sshd[3204]: Failed password for invalid user guest from 192.0.2.99 port 40010 ssh2

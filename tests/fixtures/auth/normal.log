@@ -1,0 +1,7 @@
+Jun  3 08:00:01 bastion sshd[4001]: Accepted publickey for kyle from 198.51.100.7 port 50201 ssh2: RSA SHA256:aBcD
+Jun  3 08:00:01 bastion sshd[4001]: pam_unix(sshd:session): session opened for user kyle by (uid=0)
+Jun  3 12:15:40 bastion sshd[4001]: pam_unix(sshd:session): session closed for user kyle
+Jun  3 13:02:11 bastion sshd[4010]: Accepted publickey for sandra from 198.51.100.8 port 50230 ssh2: RSA SHA256:eFgH
+Jun  3 13:02:11 bastion sshd[4010]: pam_unix(sshd:session): session opened for user sandra by (uid=0)
+Jun  3 13:40:00 bastion sshd[4015]: Connection closed by 198.51.100.8 port 50231 [preauth]
+Jun  3 17:22:05 bastion sshd[4010]: pam_unix(sshd:session): session closed for user sandra

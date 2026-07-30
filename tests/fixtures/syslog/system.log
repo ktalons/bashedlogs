@@ -1,0 +1,14 @@
+Jun 10 06:25:01 webserv CRON[9101]: (root) CMD (command -v debian-sa1 > /dev/null && debian-sa1 1 1)
+Jun 10 06:30:11 webserv systemd[1]: Starting Daily apt download activities...
+Jun 10 06:30:12 webserv systemd[1]: apt-daily.service: Succeeded.
+Jun 10 07:02:44 webserv kernel: [812345.678901] Out of memory: Killed process 4321 (java) total-vm:8388608kB
+Jun 10 07:02:45 webserv systemd[1]: app-worker.service: Main process exited, code=killed, status=9/KILL
+Jun 10 07:02:46 webserv systemd[1]: app-worker.service: Failed with result 'signal'.
+Jun 10 07:05:00 webserv systemd[1]: app-worker.service: Scheduled restart job, restart counter is at 1.
+Jun 10 08:14:09 webserv kernel: [816754.321098] reportgen[5150]: segfault at 7f3a00000000 ip 00005584a1b2c3d4 sp 00007ffd11223344 error 4 in reportgen[5584a1a00000+200000]
+Jun 10 09:00:00 webserv sudo: kyle : TTY=pts/0 ; PWD=/home/kyle ; USER=root ; COMMAND=/usr/bin/systemctl restart nginx
+Jun 10 09:00:00 webserv sudo: pam_unix(sudo:session): session opened for user root by kyle(uid=1000)
+Jun 10 09:00:04 webserv sudo: pam_unix(sudo:session): session closed for user root
+Jun 10 11:41:33 webserv sudo: sandra : 3 incorrect password attempts ; TTY=pts/1 ; PWD=/home/sandra ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow
+Jun 10 12:00:07 webserv CRON[9310]: (www-data) CMD (php /var/www/queue-runner.php)
+Jun 10 12:10:22 webserv systemd[1]: logrotate.service: Succeeded.

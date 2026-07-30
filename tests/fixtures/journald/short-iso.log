@@ -1,0 +1,8 @@
+2025-06-10T09:00:01-0700 webserv systemd[1]: Started Session 42 of user kyle.
+2025-06-10T09:00:05-0700 webserv sshd[7001]: Accepted publickey for kyle from 198.51.100.7 port 51000 ssh2
+2025-06-10T09:15:12-0700 webserv nginx[1200]: 2025/06/10 09:15:12 [error] 1200#1200: *44 open() failed (2: No such file or directory)
+2025-06-10T09:30:00-0700 webserv kernel[0]: Out of memory: Killed process 5900 (chromium) total-vm:4194304kB
+2025-06-10T09:30:02-0700 webserv systemd[1]: render.service: Failed with result 'oom-kill'.
+2025-06-10T10:00:00-0700 webserv systemd[1]: Starting Cleanup of Temporary Directories...
+2025-06-10T10:00:01-0700 webserv systemd[1]: systemd-tmpfiles-clean.service: Succeeded.
+2025-06-10T10:30:44-0700 webserv myapp[6100]: request completed in 120ms

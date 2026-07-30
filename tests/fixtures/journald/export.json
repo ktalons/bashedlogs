@@ -1,0 +1,6 @@
+{"__REALTIME_TIMESTAMP":"1749574801000000","_HOSTNAME":"webserv","SYSLOG_IDENTIFIER":"systemd","PRIORITY":"6","MESSAGE":"Started Session 42 of user kyle."}
+{"__REALTIME_TIMESTAMP":"1749574805000000","_HOSTNAME":"webserv","SYSLOG_IDENTIFIER":"sshd","PRIORITY":"6","MESSAGE":"Accepted publickey for kyle from 198.51.100.7 port 51000 ssh2"}
+{"__REALTIME_TIMESTAMP":"1749575712000000","_HOSTNAME":"webserv","SYSLOG_IDENTIFIER":"nginx","PRIORITY":"3","MESSAGE":"open() failed (2: No such file or directory) while reading upstream"}
+{"__REALTIME_TIMESTAMP":"1749576600000000","_HOSTNAME":"webserv","SYSLOG_IDENTIFIER":"kernel","PRIORITY":"2","MESSAGE":"Out of memory: Killed process 5900 (chromium) total-vm:4194304kB"}
+{"__REALTIME_TIMESTAMP":"1749576602000000","_HOSTNAME":"webserv","SYSLOG_IDENTIFIER":"kernel","PRIORITY":"4","MESSAGE":"reportgen[5150]: segfault at 7f3a00000000 ip 00005584a1b2c3d4 error 4"}
+{"__REALTIME_TIMESTAMP":"1749578444000000","_HOSTNAME":"webserv","SYSLOG_IDENTIFIER":"myapp","PRIORITY":"6","MESSAGE":"request completed in 120ms"}

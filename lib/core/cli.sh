@@ -14,6 +14,8 @@ COLOR_MODE="auto"
 FORMAT_OVERRIDE=""
 STRICT=0
 FAIL_LEVEL=""
+BF_THRESHOLD=10
+BF_WINDOW=60
 CLEANUP_FILE=""
 
 usage() {
@@ -30,6 +32,8 @@ Options:
       --list-formats    list registered formats and exit
       --strict          exit 2 instead of falling back to the generic analyzer
       --fail-level LVL  exit 3 when findings reach LVL (low|medium|high|critical)
+      --bf-threshold N  brute-force window: alert at N failures (default 10)
+      --bf-window SEC   brute-force sliding window in seconds (default 60)
       --no-color        disable colors (NO_COLOR env is also honored)
       --version         print version and exit
   -h, --help            show this help
@@ -72,6 +76,20 @@ parse_args() {
         case "$2" in
           low|medium|high|critical) FAIL_LEVEL=$2 ;;
           *) die_usage "bad --fail-level '$2' (low|medium|high|critical)" ;;
+        esac
+        shift 2 ;;
+      --bf-threshold)
+        require_arg "$1" "$#"
+        case "$2" in
+          ''|0|*[!0-9]*) die_usage "--bf-threshold needs a positive integer" ;;
+          *) BF_THRESHOLD=$2 ;;
+        esac
+        shift 2 ;;
+      --bf-window)
+        require_arg "$1" "$#"
+        case "$2" in
+          ''|0|*[!0-9]*) die_usage "--bf-window needs a positive integer" ;;
+          *) BF_WINDOW=$2 ;;
         esac
         shift 2 ;;
       --no-color) COLOR_MODE="off"; shift ;;
