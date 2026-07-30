@@ -2,9 +2,18 @@
 # auth_ssh.sh - SSH/PAM authentication log analyzer
 #
 # Replaces v1's total-keyword-count "brute force detection" with a real
-# per-source sliding window, and only counts "Failed password"/"authentication
-# failure" lines as failure events ("Invalid user" preambles are tracked as
-# enumeration signal instead of double-counting the same attempt).
+# per-source sliding window.
+#
+# Counting one attempt exactly once is the whole ballgame here:
+#   - Debian/Ubuntu sshd logs BOTH `pam_unix(sshd:auth): authentication
+#     failure` and `Failed password` for a single failed attempt. Counting both
+#     doubled every figure and halved the effective --bf-threshold, so three
+#     attempts could raise a "12 failures" alert. sshd's own `Failed <method>`
+#     line is authoritative; the PAM line is only used as the failure stream
+#     when a log contains no sshd failure lines at all (filtered exports).
+#   - `Invalid user` preambles are enumeration signal, not separate failures.
+#   - `Failed publickey`/`Failed none` are routine negotiation noise, counted
+#     as probes rather than credential attempts.
 
 register_format auth_ssh "SSH/PAM auth logs (sshd, brute force windows, compromise heuristic)"
 
@@ -26,24 +35,19 @@ auth_ssh_analyze() {
   local raw events kind a b c
 
   # Pass 1: classify events, extract validated IPs/users, stamp epochs.
-  raw=$(awk -v YEAR="$assume_year" "$AWK_TIME_LIB"'
-    function valid_ip(tok,    parts, j) {
-      if (tok !~ /^([0-9]+\.){3}[0-9]+$/) return 0
-      split(tok, parts, ".")
-      for (j = 1; j <= 4; j++) {
-        if (length(parts[j]) > 3 || parts[j] + 0 > 255) return 0
-      }
-      return 1
-    }
-    # IP after a "from" token, or rhost=IP
+  raw=$(awk -v YEAR="$assume_year" "$AWK_IP_LIB$AWK_TIME_LIB"'
+    # IP after a "from" token, or rhost=IP. Handles IPv4 and IPv6.
     function line_ip(   i, tok) {
       for (i = 1; i < NF; i++) {
-        if ($i == "from" && valid_ip($(i + 1))) return $(i + 1)
+        if ($i == "from") {
+          tok = bl_clean_ip($(i + 1))
+          if (bl_valid_ip(tok)) return tok
+        }
       }
       for (i = 1; i <= NF; i++) {
         if ($i ~ /^rhost=/) {
-          tok = substr($i, 7)
-          if (valid_ip(tok)) return tok
+          tok = bl_clean_ip(substr($i, 7))
+          if (bl_valid_ip(tok)) return tok
         }
       }
       return ""
@@ -79,14 +83,28 @@ auth_ssh_analyze() {
       ip = line_ip()
       e = line_epoch()
 
-      if ($0 ~ /Failed password|pam_unix\(sshd:auth\): authentication failure/) {
-        failed++
-        if ($0 ~ /for root |user=root($| )/) root_attempts++
+      # sshd credential failures: authoritative, one line per real attempt.
+      if ($0 ~ /Failed (password|keyboard-interactive)/) {
+        sshd_fail++
+        if ($0 ~ /for root |for invalid user root /) sshd_root++
         if (ip != "") {
-          fail_ip[ip]++
+          sshd_fail_ip[ip]++
           user = line_user()
-          if (user != "" && user != "invalid") fail_user[user]++
-          if (e > 0) printf "EV\t%d\tfail\t%s\n", e, ip
+          if (user != "" && user != "invalid") sshd_fail_user[user]++
+          if (e > 0) printf "EV\tsshd\t%d\tfail\t%s\n", e, ip
+        }
+        next
+      }
+      # PAM view of the same attempt. Tracked separately and only promoted to
+      # the failure stream when the log has no sshd failure lines at all.
+      if ($0 ~ /pam_unix\(sshd:auth\): authentication failure/) {
+        pam_fail++
+        if ($0 ~ /user=root($| )/) pam_root++
+        if (ip != "") {
+          pam_fail_ip[ip]++
+          user = line_user()
+          if (user != "" && user != "invalid") pam_fail_user[user]++
+          if (e > 0) printf "EV\tpam\t%d\tfail\t%s\n", e, ip
         }
         next
       }
@@ -100,9 +118,10 @@ auth_ssh_analyze() {
         accepted++
         user = line_user()
         if ($0 ~ /Accepted password for root /) root_pw_login++
-        if (ip != "" && e > 0) printf "EV\t%d\taccept\t%s\t%s\n", e, ip, user
+        if (ip != "" && e > 0) printf "EV\tboth\t%d\taccept\t%s\t%s\n", e, ip, user
         next
       }
+      if ($0 ~ /Failed (publickey|none)/) { probes++; next }
       if ($0 ~ /Did not receive identification|Connection (closed|reset) by .*preauth|Received disconnect/) {
         probes++
         next
@@ -111,11 +130,15 @@ auth_ssh_analyze() {
       if ($0 ~ /session closed/) { sess_close++; next }
     }
     END {
+      # sshd lines win when present; PAM lines are the fallback stream.
+      use_pam = (sshd_fail == 0 && pam_fail > 0)
+      printf "SOURCE\t%s\n", (use_pam ? "pam" : "sshd")
       printf "TOTAL\t%d\n", total
-      printf "FAILED\t%d\n", failed
+      printf "FAILED\t%d\n", (use_pam ? pam_fail : sshd_fail)
+      printf "PAMDUPES\t%d\n", (use_pam ? 0 : pam_fail)
       printf "INVALID\t%d\n", invalid
       printf "ACCEPTED\t%d\n", accepted
-      printf "ROOTATT\t%d\n", root_attempts
+      printf "ROOTATT\t%d\n", (use_pam ? pam_root : sshd_root)
       printf "ROOTPW\t%d\n", root_pw_login
       printf "PROBES\t%d\n", probes
       printf "SESSOPEN\t%d\n", sess_open
@@ -124,15 +147,23 @@ auth_ssh_analyze() {
       printf "LASTTS\t%s\n", last_ts
       n = 0; for (u in enum_user) n++
       printf "ENUMUSERS\t%d\n", n
-      for (ipx in fail_ip) printf "FIP\t%d\t%s\n", fail_ip[ipx], ipx
-      for (u in fail_user) printf "FUSER\t%d\t%s\n", fail_user[u], u
+      if (use_pam) {
+        for (ipx in pam_fail_ip) printf "FIP\t%d\t%s\n", pam_fail_ip[ipx], ipx
+        for (u in pam_fail_user) printf "FUSER\t%d\t%s\n", pam_fail_user[u], bl_tsv(u)
+      } else {
+        for (ipx in sshd_fail_ip) printf "FIP\t%d\t%s\n", sshd_fail_ip[ipx], ipx
+        for (u in sshd_fail_user) printf "FUSER\t%d\t%s\n", sshd_fail_user[u], bl_tsv(u)
+      }
     }
   ' "$file")
 
   local total=0 failed=0 invalid=0 accepted=0 root_attempts=0 root_pw=0
   local probes=0 sess_open=0 sess_close=0 enum_users=0 first_ts="" last_ts=""
+  local source="sshd" pam_dupes=0
   while IFS=$'\t' read -r kind a b; do
     case "$kind" in
+      SOURCE) source=$a ;;
+      PAMDUPES) pam_dupes=$a ;;
       TOTAL) total=$a ;;
       FAILED) failed=$a ;;
       INVALID) invalid=$a ;;
@@ -150,13 +181,18 @@ auth_ssh_analyze() {
 
   # Pass 2: per-IP sliding window over the time-sorted failure stream, plus
   # the compromise heuristic (an accept from the same IP soon after a burst).
-  events=$(printf '%s\n' "$raw" | grep '^EV' | sort -t "$(printf '\t')" -k2,2n || true)
+  # Only events from the authoritative source feed the window, so a log that
+  # carries both sshd and PAM lines for one attempt cannot double-count.
+  # Fields: EV <source> <epoch> <kind> <ip> [user]
+  events=$(printf '%s\n' "$raw" | grep '^EV' \
+    | awk -F'\t' -v src="$source" '$2 == src || $2 == "both"' \
+    | sort -t "$(printf '\t')" -k3,3n || true)
   local windows=""
   if [ -n "$events" ]; then
     windows=$(printf '%s\n' "$events" | awk -F'\t' \
       -v W="$BF_WINDOW" -v T="$BF_THRESHOLD" '
-      $3 == "fail" {
-        t = $2 + 0; ip = $4
+      $4 == "fail" {
+        t = $3 + 0; ip = $5
         q[ip, ++tail[ip]] = t
         while (head[ip] < tail[ip] && q[ip, head[ip] + 1] <= t - W) head[ip]++
         size = tail[ip] - head[ip]
@@ -169,8 +205,8 @@ auth_ssh_analyze() {
           last_burst[ip] = t
         }
       }
-      $3 == "accept" {
-        t = $2 + 0; ip = $4; user = $5
+      $4 == "accept" {
+        t = $3 + 0; ip = $5; user = $6
         if ((ip in last_burst) && t >= last_burst[ip] && t - last_burst[ip] <= 600) {
           comp_user[ip] = user
           comp_t[ip] = t
@@ -187,6 +223,10 @@ auth_ssh_analyze() {
 
   report_metric "total_lines" "$total"
   report_metric "failed_auth" "$failed"
+  report_metric "failure_source" "$source"
+  if [ "$pam_dupes" -gt 0 ]; then
+    report_metric "pam_duplicate_lines" "$pam_dupes (not counted)"
+  fi
   report_metric "invalid_user_lines" "$invalid"
   report_metric "accepted_logins" "$accepted"
   report_metric "sessions_opened" "$sess_open"

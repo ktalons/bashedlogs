@@ -1,0 +1,6 @@
+Jun 12 18:30:00 gw filterlog[2100]: 5,,,1000000103,igb0,match,block,in,4,0x0,,64,12345,0,none,1,icmp,60,192.0.2.88,198.51.100.5,request,8,0
+Jun 12 18:30:01 gw filterlog[2100]: 5,,,1000000103,igb0,match,block,in,4,0x0,,64,12346,0,none,1,icmp,60,192.0.2.88,198.51.100.5,request,8,0
+Jun 12 18:30:02 gw filterlog[2100]: 5,,,1000000103,igb0,match,block,in,4,0x0,,64,12347,0,DF,6,tcp,60,192.0.2.88,198.51.100.5,55001,22,0,S,1,,1024
+Jun 12 18:31:00 gw kernel: [1.0] iptables: IN=eth0 OUT= SRC=203.0.113.9 DST=198.51.100.5 LEN=84 PROTO=ICMP TYPE=8 CODE=0 ID=1 SEQ=1 DROP
+Jun 12 18:31:01 gw kernel: [1.0] iptables: IN=eth0 OUT= SRC=203.0.113.9 DST=198.51.100.5 LEN=60 PROTO=TCP SPT=1 DPT=443 WINDOW=1024 SYN DROP
+Jun 12 18:32:00 gw kernel: [1.0] iptables: IN=eth0 OUT= SRC=2001:db8::99 DST=2001:db8::5 LEN=60 PROTO=TCP SPT=1 DPT=8443 WINDOW=1024 SYN DROP

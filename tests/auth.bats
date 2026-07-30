@@ -67,6 +67,23 @@ setup() {
   [ "$output" = "203.0.113.66 (12)" ]
 }
 
+@test "sliding window is exact at its boundary" {
+  # 7 failures: six at 10s intervals (span 50s), then one at +65s from the first.
+  log="$BATS_TEST_TMPDIR/boundary.log"
+  for s in 00 10 20 30 40 50; do
+    printf 'Jun  1 10:00:%s h sshd[1]: Failed password for root from 203.0.113.1 port 1 ssh2\n' "$s"
+  done > "$log"
+  printf 'Jun  1 10:01:05 h sshd[1]: Failed password for root from 203.0.113.1 port 1 ssh2\n' >> "$log"
+
+  # Six DO fit in a 60s window.
+  run bash -c "\"$BL\" -o json --bf-threshold 6 --bf-window 60 \"$log\" | jq -r '[.findings[]|select(.category==\"brute-force\")][0].data.count'"
+  [ "$output" = "6" ]
+
+  # Seven never do, because the last one is 65s after the first.
+  run bash -c "\"$BL\" -o json --bf-threshold 7 --bf-window 60 \"$log\" | jq -r '[.findings[]|select(.category==\"brute-force\")]|length'"
+  [ "$output" = "0" ]
+}
+
 @test "healthy auth log yields zero findings" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/auth/normal.log\" | jq -r '(.findings | length), .threat.level'"
   [ "$status" -eq 0 ]

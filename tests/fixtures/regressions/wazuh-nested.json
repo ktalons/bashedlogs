@@ -1,0 +1,2 @@
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:01.000-0700","agent":{"id":"001","name":"web-01"},"rule":{"level":10,"description":"sshd: brute force","id":"5712"},"data":{"srcip":"203.0.113.9"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"pam"},"timestamp":"2025-06-12T10:00:02.000-0700","agent":{"id":"002","name":"db-01"},"rule":{"level":12,"description":"user said \"hi\" then failed","id":"5716"},"data":{"srcip":"2001:db8::9"}}

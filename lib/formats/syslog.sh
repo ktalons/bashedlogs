@@ -21,7 +21,7 @@ syslog_analyze() {
   local file=$1
   local raw kind a b
 
-  raw=$(awk '
+  raw=$(awk "$AWK_IP_LIB"'
     {
       total++
       if (first_ts == "") first_ts = $1 " " $2 " " $3
@@ -49,8 +49,8 @@ syslog_analyze() {
       printf "SUDOCMD\t%d\n", sudo_cmd
       printf "FIRSTTS\t%s\n", first_ts
       printf "LASTTS\t%s\n", last_ts
-      for (h in host) printf "HOST\t%d\t%s\n", host[h], h
-      for (p in progs) printf "PROG\t%d\t%s\n", progs[p], p
+      for (h in host) printf "HOST\t%d\t%s\n", host[h], bl_tsv(h)
+      for (p in progs) printf "PROG\t%d\t%s\n", progs[p], bl_tsv(p)
     }
   ' "$file")
 

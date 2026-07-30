@@ -1,8 +1,12 @@
 # shellcheck shell=bash
 # wazuh_alerts.sh - Wazuh alerts.json (one alert object per line)
-# Field extraction is awk string matching on the stable keys a triage pass
-# needs (rule.level, rule.description, agent.name, data.srcip, MITRE ids) -
-# no jq dependency at runtime.
+#
+# Field extraction is awk string matching, not a real JSON parser, so it has to
+# be path-aware: a real alert carries manager.name, agent.name AND decoder.name,
+# and a bare search for "name" finds the manager on every line - which silently
+# attributed every alert to the Wazuh server instead of the affected host.
+# Values are read from within the parent object, and quote scanning respects
+# backslash escapes so a description containing \" is not truncated.
 
 register_format wazuh_alerts "Wazuh alerts.json (level histogram, top rules/agents, MITRE mapping)"
 
@@ -20,14 +24,32 @@ wazuh_alerts_analyze() {
   local file=$1
   local raw kind a b
 
-  raw=$(awk '
-    function jstr(line, key,    pat, pos, v) {
+  raw=$(awk "$AWK_IP_LIB"'
+    # Read a quoted string value, honoring backslash escapes, so a value like
+    # "user said \"hi\"" is returned whole instead of cut at the first \".
+    function jstr(line, key,    pat, pos, i, c, out, esc) {
       pat = "\"" key "\":\""
       pos = index(line, pat)
       if (pos == 0) return ""
-      v = substr(line, pos + length(pat))
-      sub(/".*$/, "", v)
-      return v
+      i = pos + length(pat)
+      out = ""
+      esc = 0
+      while (i <= length(line)) {
+        c = substr(line, i, 1)
+        if (esc) {
+          # keep the escaped character as-is (\" -> ", \\ -> \)
+          out = out c
+          esc = 0
+        } else if (c == "\\") {
+          esc = 1
+        } else if (c == "\"") {
+          return out
+        } else {
+          out = out c
+        }
+        i++
+      }
+      return out
     }
     function jnum(line, key,    pat, pos, v) {
       pat = "\"" key "\":"
@@ -38,22 +60,53 @@ wazuh_alerts_analyze() {
       sub(/[^0-9].*$/, "", v)
       return v + 0
     }
+    # Return the substring of the object named by key, brace-balanced, so
+    # nested lookups cannot leak into a sibling object.
+    function jobj(line, key,    pat, pos, i, depth, c, start, instr, esc) {
+      pat = "\"" key "\":{"
+      pos = index(line, pat)
+      if (pos == 0) return ""
+      start = pos + length(pat) - 1
+      depth = 0; instr = 0; esc = 0
+      for (i = start; i <= length(line); i++) {
+        c = substr(line, i, 1)
+        if (instr) {
+          if (esc) esc = 0
+          else if (c == "\\") esc = 1
+          else if (c == "\"") instr = 0
+          continue
+        }
+        if (c == "\"") { instr = 1; continue }
+        if (c == "{") depth++
+        else if (c == "}") {
+          depth--
+          if (depth == 0) return substr(line, start, i - start + 1)
+        }
+      }
+      return ""
+    }
     /^\{/ {
       total++
-      level = jnum($0, "level")
+      rule = jobj($0, "rule")
+      if (rule == "") rule = $0
+      level = jnum(rule, "level")
+      desc = jstr(rule, "description")
       if (level >= 0) {
-        if (level > max_level) { max_level = level; worst = jstr($0, "description") }
+        if (level > max_level) { max_level = level; worst = desc }
         if (level >= 12) crit++
         else if (level >= 8) high++
         else if (level >= 4) mid++
         else low++
       }
-      agent = jstr($0, "name")
+      # agent.name specifically - manager.name and decoder.name also exist.
+      agentobj = jobj($0, "agent")
+      agent = (agentobj != "") ? jstr(agentobj, "name") : ""
       if (agent != "") agents[agent]++
-      desc = jstr($0, "description")
       if (desc != "") { rules[desc]++ }
-      srcip = jstr($0, "srcip")
-      if (srcip ~ /^([0-9]+\.){3}[0-9]+$/) srcips[srcip]++
+      dataobj = jobj($0, "data")
+      srcip = (dataobj != "") ? jstr(dataobj, "srcip") : jstr($0, "srcip")
+      srcip = bl_clean_ip(srcip)
+      if (srcip != "" && bl_valid_ip(srcip)) srcips[srcip]++
       if (first_ts == "") first_ts = jstr($0, "timestamp")
       last_ts = jstr($0, "timestamp")
       # MITRE technique ids appear as "id":["T1110",...] inside rule.mitre
@@ -69,14 +122,14 @@ wazuh_alerts_analyze() {
       printf "HIGH\t%d\t-\n", high
       printf "MID\t%d\t-\n", mid
       printf "LOW\t%d\t-\n", low
-      printf "MAXLEVEL\t%d\t%s\n", max_level, worst
+      printf "MAXLEVEL\t%d\t%s\n", max_level, bl_tsv(worst)
       if (first_ts != "") printf "FIRSTTS\t%s\t-\n", first_ts
       if (last_ts != "") printf "LASTTS\t%s\t-\n", last_ts
       m = ""
       for (t in mitre) m = (m == "" ? t : m "," t)
       if (m != "") printf "MITRE\t%s\t-\n", m
-      for (x in agents) printf "AGENT\t%d\t%s\n", agents[x], x
-      for (x in rules) printf "RULE\t%d\t%s\n", rules[x], x
+      for (x in agents) printf "AGENT\t%d\t%s\n", agents[x], bl_tsv(x)
+      for (x in rules) printf "RULE\t%d\t%s\n", rules[x], bl_tsv(x)
       for (x in srcips) printf "SRCIP\t%d\t%s\n", srcips[x], x
     }
   ' "$file")

@@ -182,21 +182,21 @@ mkdir -p "$FIX/wazuh" "$FIX/dns" "$FIX/firewall" "$FIX/iocs"
 # wazuh/alerts.json: level histogram spanning low/mid/high/critical, MITRE ids,
 # and one srcip clustering enough alerts to trip the cluster finding.
 cat > "$FIX/wazuh/alerts.json" <<'EOF'
-{"timestamp":"2025-06-12T10:00:01.000-0700","agent":{"id":"001","name":"web-01"},"rule":{"level":3,"description":"Successful sudo to ROOT executed","id":"5402","mitre":{"id":["T1548.003"]}},"data":{"srcuser":"kyle"}}
-{"timestamp":"2025-06-12T10:00:20.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:00:25.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:00:30.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:00:35.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:00:40.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:00:45.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:00:50.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:00:55.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:01:00.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:01:05.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":10,"description":"sshd: brute force trying to get access to the system","id":"5712","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:02:00.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":10,"description":"Multiple authentication failures followed by a success","id":"40112","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
-{"timestamp":"2025-06-12T10:15:00.000-0700","agent":{"id":"001","name":"web-01"},"rule":{"level":12,"description":"Integrity checksum changed for /etc/shadow","id":"550","mitre":{"id":["T1565.001"]}},"data":{}}
-{"timestamp":"2025-06-12T10:20:00.000-0700","agent":{"id":"003","name":"db-01"},"rule":{"level":7,"description":"Web server 400 error code","id":"31101","mitre":{"id":["T1190"]}},"data":{"srcip":"192.0.2.15"}}
-{"timestamp":"2025-06-12T10:25:00.000-0700","agent":{"id":"003","name":"db-01"},"rule":{"level":2,"description":"Windows logon success","id":"18107"},"data":{}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:01.000-0700","agent":{"id":"001","name":"web-01"},"rule":{"level":3,"description":"Successful sudo to ROOT executed","id":"5402","mitre":{"id":["T1548.003"]}},"data":{"srcuser":"kyle"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:20.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:25.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:30.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:35.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:40.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:45.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:50.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:55.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:01:00.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":5,"description":"sshd: authentication failed","id":"5716","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:01:05.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":10,"description":"sshd: brute force trying to get access to the system","id":"5712","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"web"},"timestamp":"2025-06-12T10:02:00.000-0700","agent":{"id":"002","name":"bastion"},"rule":{"level":10,"description":"Multiple authentication failures followed by a success","id":"40112","mitre":{"id":["T1110"]}},"data":{"srcip":"203.0.113.66"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"syscheck"},"timestamp":"2025-06-12T10:15:00.000-0700","agent":{"id":"001","name":"web-01"},"rule":{"level":12,"description":"Integrity checksum changed for /etc/shadow","id":"550","mitre":{"id":["T1565.001"]}},"data":{}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"web"},"timestamp":"2025-06-12T10:20:00.000-0700","agent":{"id":"003","name":"db-01"},"rule":{"level":7,"description":"Web server 400 error code","id":"31101","mitre":{"id":["T1190"]}},"data":{"srcip":"192.0.2.15"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"web"},"timestamp":"2025-06-12T10:25:00.000-0700","agent":{"id":"003","name":"db-01"},"rule":{"level":2,"description":"Windows logon success","id":"18107"},"data":{}}
 EOF
 
 # dns/route53.log: normal traffic plus one tunneling-shaped long TXT query.
@@ -231,6 +231,55 @@ cat > "$FIX/iocs/sample.log" <<'EOF'
 2025-06-12T20:00:04Z scanner INFO file quarantined sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709
 2025-06-12T20:00:05Z scanner INFO file quarantined sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 2025-06-12T20:00:06Z dns INFO query c2.badhost.example.org from 192.0.2.44
+EOF
+
+mkdir -p "$FIX/regressions"
+
+# regressions/pam-dual.log: Debian/Ubuntu sshd logs BOTH a pam_unix line and a
+# Failed password line for ONE attempt. Three real attempts here. Counting both
+# lines reported 6 and halved the effective --bf-threshold.
+cat > "$FIX/regressions/pam-dual.log" <<'EOF'
+Jun  1 10:00:00 h sshd[100]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.5 user=root
+Jun  1 10:00:00 h sshd[100]: Failed password for root from 203.0.113.5 port 40001 ssh2
+Jun  1 10:00:03 h sshd[101]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.5 user=root
+Jun  1 10:00:03 h sshd[101]: Failed password for root from 203.0.113.5 port 40002 ssh2
+Jun  1 10:00:06 h sshd[102]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.5 user=root
+Jun  1 10:00:06 h sshd[102]: Failed password for root from 203.0.113.5 port 40003 ssh2
+EOF
+
+# regressions/pam-only.log: a filtered export with no sshd failure lines. The
+# PAM lines are then the only failure evidence and must still be counted.
+grep 'pam_unix' "$FIX/regressions/pam-dual.log" > "$FIX/regressions/pam-only.log"
+
+# regressions/ipv6-brute.log: 12 failures from one IPv6 source in 12s. An
+# IPv4-only address check counted the failures but produced NO finding, which
+# reads to an analyst as "no attack".
+: > "$FIX/regressions/ipv6-brute.log"
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  printf 'Jun  1 10:00:%02d h sshd[%d]: Failed password for root from 2001:db8::dead:beef port %d ssh2\n' \
+    "$i" "$i" "$i" >> "$FIX/regressions/ipv6-brute.log"
+done
+
+# regressions/firewall-icmp.log: ICMP has no ports, so the fields after src/dst
+# are type/code. Without a protocol gate those were reported as ports. Also
+# carries an IPv6 blocked source.
+cat > "$FIX/regressions/firewall-icmp.log" <<'EOF'
+Jun 12 18:30:00 gw filterlog[2100]: 5,,,1000000103,igb0,match,block,in,4,0x0,,64,12345,0,none,1,icmp,60,192.0.2.88,198.51.100.5,request,8,0
+Jun 12 18:30:01 gw filterlog[2100]: 5,,,1000000103,igb0,match,block,in,4,0x0,,64,12346,0,none,1,icmp,60,192.0.2.88,198.51.100.5,request,8,0
+Jun 12 18:30:02 gw filterlog[2100]: 5,,,1000000103,igb0,match,block,in,4,0x0,,64,12347,0,DF,6,tcp,60,192.0.2.88,198.51.100.5,55001,22,0,S,1,,1024
+Jun 12 18:31:00 gw kernel: [1.0] iptables: IN=eth0 OUT= SRC=203.0.113.9 DST=198.51.100.5 LEN=84 PROTO=ICMP TYPE=8 CODE=0 ID=1 SEQ=1 DROP
+Jun 12 18:31:01 gw kernel: [1.0] iptables: IN=eth0 OUT= SRC=203.0.113.9 DST=198.51.100.5 LEN=60 PROTO=TCP SPT=1 DPT=443 WINDOW=1024 SYN DROP
+Jun 12 18:32:00 gw kernel: [1.0] iptables: IN=eth0 OUT= SRC=2001:db8::99 DST=2001:db8::5 LEN=60 PROTO=TCP SPT=1 DPT=8443 WINDOW=1024 SYN DROP
+EOF
+
+# regressions/wazuh-nested.json: a realistic alert carries manager.name,
+# decoder.name AND agent.name. A bare "name" lookup found the manager, so every
+# alert was attributed to the Wazuh server. Also has an escaped quote in a
+# description (which used to truncate) and a raw tab (which used to split the
+# internal row), plus an IPv6 srcip.
+cat > "$FIX/regressions/wazuh-nested.json" <<'EOF'
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"sshd"},"timestamp":"2025-06-12T10:00:01.000-0700","agent":{"id":"001","name":"web-01"},"rule":{"level":10,"description":"sshd: brute force","id":"5712"},"data":{"srcip":"203.0.113.9"}}
+{"manager":{"name":"wazuh-mgr"},"decoder":{"name":"pam"},"timestamp":"2025-06-12T10:00:02.000-0700","agent":{"id":"002","name":"db-01"},"rule":{"level":12,"description":"user said \"hi\" then failed","id":"5716"},"data":{"srcip":"2001:db8::9"}}
 EOF
 
 mkdir -p "$FIX/hostile"

@@ -21,25 +21,20 @@ firewall_analyze() {
   local file=$1
   local raw kind a b c
 
-  raw=$(awk '
-    function valid_ip(tok,    parts, j) {
-      if (tok !~ /^([0-9]+\.){3}[0-9]+$/) return 0
-      split(tok, parts, ".")
-      for (j = 1; j <= 4; j++) {
-        if (length(parts[j]) > 3 || parts[j] + 0 > 255) return 0
-      }
-      return 1
-    }
+  raw=$(awk "$AWK_IP_LIB"'
     # iptables kernel line: KEY=VALUE tokens
     /SRC=.*DST=.*PROTO=/ {
       total++
-      src = ""; dpt = ""; action = "log"
+      src = ""; dpt = ""; action = "log"; proto = ""
       for (i = 1; i <= NF; i++) {
-        if ($i ~ /^SRC=/) src = substr($i, 5)
+        if ($i ~ /^SRC=/) src = bl_clean_ip(substr($i, 5))
         else if ($i ~ /^DPT=/) dpt = substr($i, 5)
+        else if ($i ~ /^PROTO=/) proto = tolower(substr($i, 7))
       }
+      # ICMP and friends have no ports; anything in DPT there is not a port.
+      if (proto != "tcp" && proto != "udp") dpt = ""
       if (tolower($0) ~ /drop|reject|denied|block/) { action = "block"; blocked++ }
-      if (valid_ip(src)) {
+      if (bl_valid_ip(src)) {
         srcs[src]++
         if (action == "block") {
           bsrcs[src]++
@@ -60,12 +55,16 @@ firewall_analyze() {
       csv = $0
       sub(/^.*filterlog(\[[0-9]+\])?: */, "", csv)
       n = split(csv, f, ",")
-      action = ""
+      action = ""; proto = ""
       src = ""; dst = ""; sport = ""; dport = ""
       for (i = 1; i <= n; i++) {
         if (f[i] == "block" || f[i] == "pass" || f[i] == "rdr") { if (action == "") action = f[i] }
-        if (src == "" && valid_ip(f[i])) { src = f[i]; continue }
-        if (src != "" && dst == "" && valid_ip(f[i])) { dst = f[i]; continue }
+        if (proto == "" && (f[i] == "tcp" || f[i] == "udp" || f[i] == "icmp" || f[i] == "icmpv6" \
+            || f[i] == "igmp" || f[i] == "esp" || f[i] == "gre" || f[i] == "ipv6-icmp")) proto = f[i]
+        if (src == "" && bl_valid_ip(f[i])) { src = f[i]; continue }
+        if (src != "" && dst == "" && bl_valid_ip(f[i])) { dst = f[i]; continue }
+        # Ports only exist for tcp/udp; for icmp these positions are type/code.
+        if (proto != "tcp" && proto != "udp") continue
         if (dst != "" && sport == "" && f[i] ~ /^[0-9]+$/) { sport = f[i]; continue }
         if (sport != "" && dport == "" && f[i] ~ /^[0-9]+$/) { dport = f[i]; continue }
       }

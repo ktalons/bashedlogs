@@ -1,0 +1,6 @@
+Jun  1 10:00:00 h sshd[100]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.5 user=root
+Jun  1 10:00:00 h sshd[100]: Failed password for root from 203.0.113.5 port 40001 ssh2
+Jun  1 10:00:03 h sshd[101]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.5 user=root
+Jun  1 10:00:03 h sshd[101]: Failed password for root from 203.0.113.5 port 40002 ssh2
+Jun  1 10:00:06 h sshd[102]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.5 user=root
+Jun  1 10:00:06 h sshd[102]: Failed password for root from 203.0.113.5 port 40003 ssh2

@@ -22,7 +22,7 @@ dns_route53_analyze() {
   local file=$1
   local raw kind a b
 
-  raw=$(awk '
+  raw=$(awk "$AWK_IP_LIB"'
     {
       total++
       if (first_ts == "") first_ts = $2
@@ -47,7 +47,7 @@ dns_route53_analyze() {
     END {
       printf "TOTAL\t%d\t-\n", total
       printf "NX\t%d\t-\n", nx
-      printf "LONGQ\t%d\t%s\n", long_q, long_ex
+      printf "LONGQ\t%d\t%s\n", long_q, bl_tsv(long_ex)
       printf "TXT\t%d\t-\n", qtype["TXT"]
       if (first_ts != "") printf "FIRSTTS\t%s\t-\n", first_ts
       if (last_ts != "") printf "LASTTS\t%s\t-\n", last_ts
@@ -55,9 +55,9 @@ dns_route53_analyze() {
       printf "UNIQQ\t%d\t-\n", nq
       nr = 0; for (r in resolvers) nr++
       printf "UNIQRES\t%d\t-\n", nr
-      for (q in qnames) printf "QNAME\t%d\t%s\n", qnames[q], q
+      for (q in qnames) printf "QNAME\t%d\t%s\n", qnames[q], bl_tsv(q)
       for (t in qtype) printf "QTYPE\t%d\t%s\n", qtype[t], t
-      for (p in children) printf "CHILDREN\t%d\t%s\n", children[p], p
+      for (p in children) printf "CHILDREN\t%d\t%s\n", children[p], bl_tsv(p)
     }
   ' "$file")
 

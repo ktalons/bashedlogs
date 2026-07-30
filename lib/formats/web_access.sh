@@ -23,19 +23,12 @@ web_access_analyze() {
   local raw kind a b
 
   # FS='"' gives: $1 = 'ip - user [ts] ', $2 = request, $3 = ' status size '
-  raw=$(awk -F'"' '
-    function valid_ip(tok,    parts, j) {
-      if (tok !~ /^([0-9]+\.){3}[0-9]+$/) return 0
-      split(tok, parts, ".")
-      for (j = 1; j <= 4; j++) {
-        if (length(parts[j]) > 3 || parts[j] + 0 > 255) return 0
-      }
-      return 1
-    }
+  raw=$(awk -F'"' "$AWK_IP_LIB"'
     {
       total++
       n = split($1, pre, " ")
-      ip = (n >= 1 && valid_ip(pre[1])) ? pre[1] : ""
+      cand = (n >= 1) ? bl_clean_ip(pre[1]) : ""
+      ip = bl_valid_ip(cand) ? cand : ""
       if (ip != "") ips[ip]++
       if (first_ts == "" && match($1, /\[[^]]+\]/)) first_ts = substr($1, RSTART + 1, RLENGTH - 2)
       if (match($1, /\[[^]]+\]/)) last_ts = substr($1, RSTART + 1, RLENGTH - 2)
@@ -68,15 +61,15 @@ web_access_analyze() {
       printf "S3XX\t%d\t-\n", s3xx
       printf "S4XX\t%d\t-\n", s4xx
       printf "S5XX\t%d\t-\n", s5xx
-      printf "SQLI\t%d\t%s\n", sqli, sqli_ex
-      printf "XSS\t%d\t%s\n", xss, xss_ex
-      printf "TRAV\t%d\t%s\n", trav, trav_ex
+      printf "SQLI\t%d\t%s\n", sqli, bl_tsv(sqli_ex)
+      printf "XSS\t%d\t%s\n", xss, bl_tsv(xss_ex)
+      printf "TRAV\t%d\t%s\n", trav, bl_tsv(trav_ex)
       np = 0; for (p in probe_ips) np++
       printf "PROBE\t%d\t%d\n", probe, np
       if (first_ts != "") printf "FIRSTTS\t%s\t-\n", first_ts
       if (last_ts != "") printf "LASTTS\t%s\t-\n", last_ts
       for (i in ips) printf "IP\t%d\t%s\n", ips[i], i
-      for (p in paths) printf "PATH\t%d\t%s\n", paths[p], p
+      for (p in paths) printf "PATH\t%d\t%s\n", paths[p], bl_tsv(p)
       for (i in nf) printf "NF\t%d\t%s\n", nf[i], i
     }
   ' "$file")

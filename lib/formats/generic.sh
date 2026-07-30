@@ -17,17 +17,15 @@ generic_analyze() {
 
   # Single awk pass. IPs are token-validated (each octet 0-255) instead of
   # substring-matched, so counts cannot be inflated by lookalike text.
-  raw=$(awk '
-    function count_ips(line,   n, toks, i, parts, ok, j) {
-      n = split(line, toks, /[^0-9.]+/)
+  raw=$(awk "$AWK_IP_LIB"'
+    function count_ips(line,   n, toks, i, t) {
+      n = split(line, toks, /[^0-9A-Fa-f.:]+/)
       for (i = 1; i <= n; i++) {
-        if (toks[i] !~ /^([0-9]+\.){3}[0-9]+$/) continue
-        ok = 1
-        split(toks[i], parts, ".")
-        for (j = 1; j <= 4; j++) {
-          if (length(parts[j]) > 3 || parts[j] + 0 > 255) { ok = 0; break }
-        }
-        if (ok) ips[toks[i]]++
+        t = bl_clean_ip(toks[i])
+        if (t == "") continue
+        # only count IPv6 tokens that actually look like addresses, so hex ids
+        # and timestamps do not get mistaken for hosts
+        if (bl_valid_ip4(t) || (t ~ /:/ && bl_valid_ip6(t))) ips[t]++
       }
     }
     {

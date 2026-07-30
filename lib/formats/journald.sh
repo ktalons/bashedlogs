@@ -36,7 +36,7 @@ journald_analyze() {
     *) mode=iso ;;
   esac
 
-  raw=$(awk -v MODE="$mode" '
+  raw=$(awk -v MODE="$mode" "$AWK_IP_LIB"'
     # crude JSON field getter: "KEY":"value" (first occurrence, no nested escapes)
     function jfield(line, key,    pat, rest, v) {
       pat = "\"" key "\":\""
@@ -79,7 +79,7 @@ journald_analyze() {
       printf "AUTHFAIL\t%d\n", authfail
       if (first_ts != "") printf "FIRSTTS\t%s\n", first_ts
       if (last_ts != "") printf "LASTTS\t%s\n", last_ts
-      for (i in idents) printf "IDENT\t%d\t%s\n", idents[i], i
+      for (i in idents) printf "IDENT\t%d\t%s\n", idents[i], bl_tsv(i)
     }
   ' "$file")
 

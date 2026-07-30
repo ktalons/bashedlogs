@@ -35,6 +35,10 @@ sev_weight() {
 }
 
 # report_add <severity> <category> <message> [key=value ...]
+#
+# Pairs are stored tab-separated, so a literal tab arriving from log content
+# (a URL or user agent can contain one) would split into a bogus extra pair.
+# Tabs are folded to spaces at this single choke point instead.
 report_add() {
   local sev=$1 cat=$2 msg=$3
   shift 3
@@ -44,8 +48,10 @@ report_add() {
   fi
   local kv="" pair
   for pair in "$@"; do
+    pair=${pair//$'\t'/ }
     if [ -z "$kv" ]; then kv=$pair; else kv=$kv$'\t'$pair; fi
   done
+  msg=${msg//$'\t'/ }
   R_SEV+=("$sev")
   R_CAT+=("$cat")
   R_MSG+=("$msg")
