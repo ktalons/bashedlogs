@@ -1,8 +1,18 @@
 # shellcheck shell=bash
-# firewall.sh - iptables (kernel SRC=/DST= lines) and pfSense filterlog
-# Both shapes can coexist in one file; each line is classified on its own.
+# ******************************************************************************
+# *Title: Firewall Log Analyzer*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Analyzes iptables and pfSense logs for blocks and port scans.*
+# ******************************************************************************
+
+# NOTE: iptables (kernel SRC=/DST= lines) and pfSense filterlog shapes can
+# coexist in one file; each line is classified on its own.
+
+# *--- Registration ---*
 
 register_format firewall "iptables + pfSense filterlog (blocks, port scans, repeat offenders)"
+
+# *--- Detection ---*
 
 firewall_detect() {
   local ipt pf
@@ -16,6 +26,8 @@ firewall_detect() {
     echo 0
   fi
 }
+
+# *--- Analysis ---*
 
 firewall_analyze() {
   local file=$1

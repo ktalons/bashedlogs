@@ -1,7 +1,13 @@
 #!/usr/bin/env bats
-# exitcodes.bats - the pipeline/cron half of the exit-code contract
+# ******************************************************************************
+# *Title: Exit Code Contract*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests the fail-level exit-code contract for pipelines and cron.*
+# ******************************************************************************
 
 load test_helper
+
+# *--- Fail-Level Threshold ---*
 
 @test "findings at --fail-level exit 3" {
   run "$BL" -o json --fail-level high "$FIXTURES/generic/mixed.log"
@@ -19,12 +25,16 @@ load test_helper
   [ "$status" -eq 0 ]
 }
 
+# *--- Baseline ---*
+
 @test "clean log produces zero findings and threat none" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/generic/clean.log\" | jq -r '(.findings | length), .threat.level'"
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = "0" ]
   [ "${lines[1]}" = "none" ]
 }
+
+# *--- Fail-Level Threshold ---*
 
 @test "no --fail-level never exits 3 even with findings" {
   run "$BL" -o json "$FIXTURES/generic/mixed.log"

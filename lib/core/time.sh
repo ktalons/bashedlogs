@@ -1,11 +1,17 @@
 # shellcheck shell=bash
-# time.sh - portable timestamp parsing as an awk function library
-#
+# ******************************************************************************
+# *Title: Awk Time Library*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Portable timestamp parsing shipped as an awk function library.*
+# ******************************************************************************
+
 # Analyzers run inside awk, so this ships awk functions (POSIX awk compatible,
 # no gawk strftime/mktime) via the AWK_TIME_LIB variable:
 #   awk "$AWK_TIME_LIB"'{ your program }'
 # Epochs are naive (no timezone math): windows and deltas only ever compare
 # timestamps from the same log, where a consistent offset cancels out.
+
+# *--- Library Definition ---*
 
 # shellcheck disable=SC2034  # consumed by format analyzers
 AWK_TIME_LIB='
@@ -51,6 +57,8 @@ function bl_iso_epoch(s,    dpart, tpart, dt, d, t) {
   return bl_civil_to_epoch(d[1] + 0, d[2] + 0, d[3] + 0, t[1] + 0, t[2] + 0, int(t[3] + 0))
 }
 '
+
+# *--- Bash Helper ---*
 
 # bl_epoch_of "<iso timestamp>": bash-side helper, mainly for tests.
 bl_epoch_of() {

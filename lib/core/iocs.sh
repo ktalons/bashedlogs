@@ -1,7 +1,14 @@
 # shellcheck shell=bash
-# iocs.sh - IOC extraction (--iocs) and defanging (--defang)
+# ******************************************************************************
+# *Title: IOC Extraction*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Extracts IOCs from log content and defangs them on request.*
+# ******************************************************************************
+
 # Domain matching is heuristic: token shape + a file-extension blocklist,
 # because a full TLD list would break the zero-dependency rule.
+
+# *--- State ---*
 
 IOC_IPS=()
 IOC_DOMAINS=()
@@ -9,6 +16,8 @@ IOC_URLS=()
 IOC_MD5=()
 IOC_SHA1=()
 IOC_SHA256=()
+
+# *--- Extraction ---*
 
 extract_iocs() {
   local file=$1 kind value
@@ -80,6 +89,8 @@ extract_iocs() {
     }
   ' "$file" | sort -t "$(printf '\t')" -k1,1 -k2,2)
 }
+
+# *--- Output Helpers ---*
 
 # maybe_defang <value>: dots -> [.] and http -> hxxp when --defang is on.
 maybe_defang() {

@@ -1,7 +1,13 @@
 #!/usr/bin/env bats
-# hostile.bats - log content is untrusted attacker-controlled input.
-# These assert output stays parseable and nothing in a log line is ever
-# executed, expanded, or treated as a printf format.
+# ******************************************************************************
+# *Title: Hostile Input Handling*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests that hostile log content is never executed or expanded.*
+# ******************************************************************************
+
+# SECURITY: log content is untrusted attacker-controlled input. These assert
+# output stays parseable and nothing in a log line is ever executed,
+# expanded, or treated as a printf format.
 
 load test_helper
 
@@ -12,6 +18,8 @@ setup() {
     return 1
   fi
 }
+
+# *--- Injection Safety ---*
 
 @test "hostile content still produces valid JSON" {
   run bash -c "\"$BL\" --iocs -o json \"$FIXTURES/hostile/injection.log\" | jq -e . >/dev/null"
@@ -56,6 +64,8 @@ setup() {
   [ "$status" -eq 0 ]
   [ "$output" = "203.0.113.66" ]
 }
+
+# *--- Malformed Input ---*
 
 @test "a filename containing a quote does not break JSON" {
   cp "$FIXTURES/generic/clean.log" "$BATS_TEST_TMPDIR/we\"ird'name.log"

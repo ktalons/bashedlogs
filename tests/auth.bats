@@ -1,7 +1,12 @@
 #!/usr/bin/env bats
-# auth.bats - auth_ssh analyzer: windowed brute force + compromise heuristic
-# The scenario pair here is the M2 contract: a burst MUST alert, a slow drip
-# over the same total count MUST NOT.
+# ******************************************************************************
+# *Title: Auth SSH Analyzer*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests the auth_ssh brute-force window and compromise heuristic.*
+# ******************************************************************************
+
+# NOTE: the scenario pair here is the M2 contract: a burst MUST alert, a slow
+# drip over the same total count MUST NOT.
 
 load test_helper
 
@@ -9,11 +14,15 @@ setup() {
   export BASHEDLOGS_ASSUME_YEAR=2025
 }
 
+# *--- Format Detection ---*
+
 @test "auth log is detected as auth_ssh" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/auth/bruteforce.log\" | jq -r .format"
   [ "$status" -eq 0 ]
   [ "$output" = "auth_ssh" ]
 }
+
+# *--- Brute Force Windows ---*
 
 @test "burst of 12 failures in 40s trips the default window" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/auth/bruteforce.log\" | jq -r '[.findings[] | select(.category==\"brute-force\")][0] | .severity, .data.ip, .data.count'"
@@ -23,6 +32,8 @@ setup() {
   [ "${lines[2]}" = "12" ]
 }
 
+# *--- Compromise Heuristic ---*
+
 @test "success shortly after a burst is flagged as possible compromise" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/auth/bruteforce.log\" | jq -r '[.findings[] | select(.category==\"possible-compromise\")][0] | .severity, .data.ip, .data.user'"
   [ "$status" -eq 0 ]
@@ -30,6 +41,8 @@ setup() {
   [ "${lines[1]}" = "203.0.113.66" ]
   [ "${lines[2]}" = "admin" ]
 }
+
+# *--- Brute Force Windows ---*
 
 @test "invalid-user preambles are not double-counted as failures" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/auth/bruteforce.log\" | jq -r '.metrics.failed_auth, .metrics.invalid_user_lines'"
@@ -83,6 +96,8 @@ setup() {
   run bash -c "\"$BL\" -o json --bf-threshold 7 --bf-window 60 \"$log\" | jq -r '[.findings[]|select(.category==\"brute-force\")]|length'"
   [ "$output" = "0" ]
 }
+
+# *--- Edge Cases ---*
 
 @test "healthy auth log yields zero findings" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/auth/normal.log\" | jq -r '(.findings | length), .threat.level'"

@@ -1,19 +1,27 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # ENRICH_STATUS/E_* are read by lib/core/output.sh
-# enrich.sh - tiered GeoIP/ASN/PTR enrichment for extracted IOC IPs
-#
+# ******************************************************************************
+# *Title: IOC Enrichment*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tiered GeoIP, ASN, and PTR enrichment for extracted IOC IPs.*
+# ******************************************************************************
+
 # Tier 1 (offline): mmdblookup + user-supplied GeoLite2 databases (--mmdb-dir
 #   or BASHEDLOGS_MMDB_DIR). No network.
 # Tier 2 (explicit): --enrich-online allows Team Cymru ASN lookups via whois
 #   and PTR via dig/host. Never used without the flag.
 # Tier 3: everything still works; enrichment reports itself as skipped.
-#
+
 # Default behavior makes zero network calls - triage tooling should not phone
 # home unless told to.
+
+# *--- State ---*
 
 ENRICH_STATUS="skipped (no MMDB dir; online lookups not enabled)"
 E_IP=()
 E_TXT=()
+
+# *--- Tier 1: Offline MMDB ---*
 
 enrich_available_mmdb() {
   command -v mmdblookup >/dev/null 2>&1 || return 1
@@ -58,6 +66,8 @@ enrich_tier_mmdb() {
   ENRICH_STATUS="mmdb (${#E_IP[@]} of ${#IOC_IPS[@]} IPs resolved)"
 }
 
+# *--- Tier 2: Online Lookups ---*
+
 enrich_tier_online() {
   local ip line asn cc name ptr txt count=0
   for ip in ${IOC_IPS[@]+"${IOC_IPS[@]}"}; do
@@ -92,6 +102,8 @@ enrich_tier_online() {
   done
   ENRICH_STATUS="online (${#E_IP[@]} of ${#IOC_IPS[@]} IPs resolved, cap 10)"
 }
+
+# *--- Dispatch ---*
 
 enrich_iocs() {
   if [ "${#IOC_IPS[@]}" -eq 0 ]; then

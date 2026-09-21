@@ -1,11 +1,19 @@
 #!/usr/bin/env bats
-# time.bats - the awk time library against independently known epochs
+# ******************************************************************************
+# *Title: Time Library*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests awk epoch conversion against independently known epochs.*
+# ******************************************************************************
 
 load test_helper
+
+# *--- Helpers ---*
 
 epoch_of() {
   bash -c "source \"$REPO_ROOT/lib/core/time.sh\" && bl_epoch_of \"$1\""
 }
+
+# *--- Epoch Conversion ---*
 
 @test "unix epoch zero" {
   run epoch_of "1970-01-01T00:00:00"

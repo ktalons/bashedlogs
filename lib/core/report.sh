@@ -1,6 +1,13 @@
 # shellcheck shell=bash
-# report.sh - finding and metric accumulation, severity model, threat score
+# ******************************************************************************
+# *Title: Report Accumulation*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Collects findings and metrics, then computes the threat score.*
+# ******************************************************************************
+
 # Sourced by bin/bashedlogs. Pure functions + module state; no side effects on load.
+
+# *--- State ---*
 
 # Findings: parallel arrays, one entry per finding.
 R_SEV=()  # severity: info|low|medium|high|critical
@@ -11,6 +18,8 @@ R_KV=()   # tab-separated key=value pairs (may be empty)
 # Metrics: ordered key/value pairs for the stats section.
 M_KEY=()
 M_VAL=()
+
+# *--- Severity Model ---*
 
 # Map severity name to rank (for --fail-level comparison) and weight (score).
 sev_rank() {
@@ -33,6 +42,8 @@ sev_weight() {
     *) echo 0 ;;
   esac
 }
+
+# *--- Accumulation ---*
 
 # report_add <severity> <category> <message> [key=value ...]
 #
@@ -63,6 +74,8 @@ report_metric() {
   M_KEY+=("$1")
   M_VAL+=("$2")
 }
+
+# *--- Threat Scoring ---*
 
 # Threat score: weighted sum of findings, capped at 100.
 threat_score() {

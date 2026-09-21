@@ -1,14 +1,15 @@
 # shellcheck shell=bash
-# wazuh_alerts.sh - Wazuh alerts.json (one alert object per line)
-#
-# Field extraction is awk string matching, not a real JSON parser, so it has to
-# be path-aware: a real alert carries manager.name, agent.name AND decoder.name,
-# and a bare search for "name" finds the manager on every line - which silently
-# attributed every alert to the Wazuh server instead of the affected host.
-# Values are read from within the parent object, and quote scanning respects
-# backslash escapes so a description containing \" is not truncated.
+# ******************************************************************************
+# *Title: Wazuh Alerts Analyzer*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Summarizes Wazuh alerts.json by level, rule, agent, and MITRE.*
+# ******************************************************************************
+
+# *--- Registration ---*
 
 register_format wazuh_alerts "Wazuh alerts.json (level histogram, top rules/agents, MITRE mapping)"
+
+# *--- Detection ---*
 
 wazuh_alerts_detect() {
   local first
@@ -20,6 +21,15 @@ wazuh_alerts_detect() {
   esac
 }
 
+# *--- Analysis ---*
+
+# NOTE: Field extraction is awk string matching, not a real JSON parser, so
+# it has to be path-aware: a real alert carries manager.name, agent.name AND
+# decoder.name, and a bare search for "name" finds the manager on every
+# line - which silently attributed every alert to the Wazuh server instead
+# of the affected host. Values are read from within the parent object, and
+# quote scanning respects backslash escapes so a description containing \"
+# is not truncated.
 wazuh_alerts_analyze() {
   local file=$1
   local raw kind a b

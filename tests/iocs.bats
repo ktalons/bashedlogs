@@ -1,9 +1,16 @@
 #!/usr/bin/env bats
-# iocs.bats - IOC extraction, defanging, and the enrichment tiers
-# Enrichment is tested against a mock mmdblookup on PATH, so no GeoLite2
+# ******************************************************************************
+# *Title: IOC Extraction and Enrichment*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests IOC extraction, defanging, and both enrichment tiers.*
+# ******************************************************************************
+
+# NOTE: enrichment is tested against a mock mmdblookup on PATH, so no GeoLite2
 # database (and no network) is needed to prove the offline tier works.
 
 load test_helper
+
+# *--- Extraction ---*
 
 @test "extracts the exact expected IOC set" {
   run bash -c "\"$BL\" --iocs -o json \"$FIXTURES/iocs/sample.log\" | jq -c '.iocs.ips, .iocs.domains, .iocs.urls, .iocs.hashes'"
@@ -13,6 +20,8 @@ load test_helper
   [ "${lines[2]}" = '["http://malware.example.net/payload.bin","https://cdn.example.com/app.js"]' ]
   [ "${lines[3]}" = '{"md5":["d41d8cd98f00b204e9800998ecf8427e"],"sha1":["da39a3ee5e6b4b0d3255bfef95601890afd80709"],"sha256":["e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"]}' ]
 }
+
+# *--- Defanging ---*
 
 @test "--defang rewrites dots and scheme" {
   run bash -c "\"$BL\" --iocs --defang -o json \"$FIXTURES/iocs/sample.log\" | jq -r '.iocs.ips[0], .iocs.urls[0]'"
@@ -26,6 +35,8 @@ load test_helper
   [ "$output" = "d41d8cd98f00b204e9800998ecf8427e" ]
 }
 
+# *--- Output Formats ---*
+
 @test "no --iocs means no iocs key in json" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/iocs/sample.log\" | jq -r 'has(\"iocs\")'"
   [ "$output" = "false" ]
@@ -38,6 +49,8 @@ load test_helper
   [[ "$output" == *"3 ip"* ]]
   [[ "$output" == *"2 url"* ]]
 }
+
+# *--- Enrichment ---*
 
 @test "enrichment degrades gracefully with nothing available" {
   run bash -c "\"$BL\" --iocs -o json \"$FIXTURES/iocs/sample.log\" | jq -r '.iocs.enrichment.status, (.iocs.enrichment.results | length)'"

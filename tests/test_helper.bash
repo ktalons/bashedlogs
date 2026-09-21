@@ -1,6 +1,10 @@
-# test_helper.bash - shared setup for the bats suite
-# BASHEDLOGS_UNDER_TEST lets CI point the same suite at dist/bashedlogs.
+# ******************************************************************************
+# *Title: Test Helper*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Shared bats setup: resolves the binary under test and fixtures.*
+# ******************************************************************************
 
+# BASHEDLOGS_UNDER_TEST lets CI point the same suite at dist/bashedlogs.
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 BL="${BASHEDLOGS_UNDER_TEST:-$REPO_ROOT/bin/bashedlogs}"
 FIXTURES="$REPO_ROOT/tests/fixtures"

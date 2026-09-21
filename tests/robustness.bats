@@ -1,7 +1,12 @@
 #!/usr/bin/env bats
-# robustness.bats - an analyzer must never abort or emit broken JSON, even when
-# pointed at a log it was not written for. Forcing all 8 analyzers over every
-# fixture is the cheapest way to catch an unguarded grep or an unbound array.
+# ******************************************************************************
+# *Title: Analyzer Robustness*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Runs every analyzer against every fixture and checks the JSON.*
+# ******************************************************************************
+
+# NOTE: forcing all 8 analyzers over every fixture is the cheapest way to
+# catch an unguarded grep or an unbound array.
 
 load test_helper
 
@@ -14,6 +19,8 @@ setup() {
     return 1
   fi
 }
+
+# *--- Cross-Format Fuzzing ---*
 
 @test "every analyzer emits valid JSON for every fixture" {
   local bad=0
@@ -50,6 +57,8 @@ setup() {
   done
 }
 
+# *--- Input Validation ---*
+
 @test "octet validation rejects impossible addresses" {
   cat > "$BATS_TEST_TMPDIR/badip.log" <<'EOF'
 999.999.999.999 - - [10/Jun/2025:10:00:00 -0700] "GET /a HTTP/1.1" 404 0 "-" "x"
@@ -68,6 +77,8 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" != *"uid="*"gid="* ]]
 }
+
+# *--- Edge Cases ---*
 
 @test "IOC output is valid with no IOCs present in any mode" {
   echo "nothing here at all" > "$BATS_TEST_TMPDIR/bare.log"

@@ -1,7 +1,13 @@
 #!/usr/bin/env bats
-# detect.bats - detection engine behavior and the --strict contract
+# ******************************************************************************
+# *Title: Detection Engine*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests format detection fallback and the --strict contract.*
+# ******************************************************************************
 
 load test_helper
+
+# *--- Generic Fallback ---*
 
 @test "unrecognized content falls back to generic" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/generic/mixed.log\" | jq -r .format"
@@ -13,6 +19,8 @@ load test_helper
   run "$BL" --strict -o json "$FIXTURES/generic/mixed.log"
   [ "$status" -eq 2 ]
 }
+
+# *--- Format Override ---*
 
 @test "--format generic forces the generic analyzer" {
   run bash -c "\"$BL\" --format generic -o json \"$FIXTURES/generic/clean.log\" | jq -r .format"

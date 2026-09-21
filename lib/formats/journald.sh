@@ -1,10 +1,20 @@
 # shellcheck shell=bash
-# journald.sh - systemd journal exports
-# Handles both `journalctl -o short-iso` text and `journalctl -o json` (one
-# JSON object per line). JSON fields are extracted with awk string matching -
-# enough for triage counts without breaking the zero-dependency rule.
+# ******************************************************************************
+# *Title: Journald Export Analyzer*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Triages systemd journal exports in short-iso or JSON format.*
+# ******************************************************************************
+
+# NOTE: Handles both `journalctl -o short-iso` text and `journalctl -o json`
+# (one JSON object per line). JSON fields are extracted with awk string
+# matching - enough for triage counts without breaking the zero-dependency
+# rule.
+
+# *--- Registration ---*
 
 register_format journald "journald exports (-o short-iso or -o json)"
+
+# *--- Detection ---*
 
 journald_detect() {
   local first hits
@@ -25,6 +35,8 @@ journald_detect() {
     echo 0
   fi
 }
+
+# *--- Analysis ---*
 
 journald_analyze() {
   local file=$1

@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# build.sh - bundle bin/bashedlogs + lib/ into the single-file release artifact
-# dist/bashedlogs, preserving the "curl one file onto a triage box" story.
+# ******************************************************************************
+# *Title: Release Bundle Builder*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Inlines lib/ into bin/bashedlogs to build dist/bashedlogs.*
+# ******************************************************************************
 # Usage: tools/build.sh [--version X.Y.Z]
 set -euo pipefail
+
+# *--- Configuration ---*
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION_OVERRIDE=""
@@ -21,7 +26,9 @@ OUT="$OUT_DIR/bashedlogs"
 
 mkdir -p "$OUT_DIR"
 
-# Everything before the skip region (shebang, version, bash guard), the
+# *--- Bundle Assembly ---*
+
+# NOTE: everything before the skip region (shebang, version, bash guard), the
 # inlined libs in the same order bin/ sources them, then the tail (main call).
 {
   sed -n '1,/@BUNDLE-SKIP-START/p' "$ENTRY" | sed '$d'
@@ -34,10 +41,14 @@ mkdir -p "$OUT_DIR"
   sed -n '/@BUNDLE-SKIP-END/,$p' "$ENTRY" | sed '1d'
 } > "$OUT"
 
+# *--- Version Override ---*
+
 if [ -n "$VERSION_OVERRIDE" ]; then
   sed -i.bak "s/^BASHEDLOGS_VERSION=.*/BASHEDLOGS_VERSION=\"$VERSION_OVERRIDE\"/" "$OUT"
   rm -f "$OUT.bak"
 fi
+
+# *--- Verify and Report ---*
 
 chmod +x "$OUT"
 bash -n "$OUT"

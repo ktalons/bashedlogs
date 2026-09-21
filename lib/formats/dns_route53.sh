@@ -1,9 +1,19 @@
 # shellcheck shell=bash
-# dns_route53.sh - AWS Route53 resolver query logs
-# Line shape: version date hosted-zone qname qtype rcode proto edge resolver-ip [edns]
-# Tunneling heuristics are length/volume based and labeled as heuristics.
+# ******************************************************************************
+# *Title: Route53 DNS Query Log Analyzer*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Analyzes Route53 resolver logs for NXDOMAIN rate and tunneling.*
+# ******************************************************************************
+
+# NOTE: Line shape is version date hosted-zone qname qtype rcode proto edge
+# resolver-ip [edns]. Tunneling heuristics are length/volume based and
+# labeled as heuristics.
+
+# *--- Registration ---*
 
 register_format dns_route53 "Route53 DNS query logs (NXDOMAIN rate, tunneling heuristics)"
+
+# *--- Detection ---*
 
 dns_route53_detect() {
   local hits
@@ -17,6 +27,8 @@ dns_route53_detect() {
     echo 0
   fi
 }
+
+# *--- Analysis ---*
 
 dns_route53_analyze() {
   local file=$1

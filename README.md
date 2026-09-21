@@ -142,6 +142,16 @@ committed.
 
 Every claim in this README maps to a test in [docs/CLAIMS.md](docs/CLAIMS.md).
 
+Source files follow a single notation convention: a five-line banner header
+naming the file's title, author, and purpose, `# *--- Section ---*` headings
+dividing the logical regions, and comments that explain why something is the
+way it is rather than restating the line below. Notes that matter carry a
+`NOTE:`, `WARN:`, or `SECURITY:` prefix, and unfinished work is a numbered
+`TODO-n` backed by a list at the top of the file. Match the surrounding style
+and keep ShellCheck directives exactly where they are; the inline ones apply
+to the next line only. See [CLAUDE.md](CLAUDE.md) for the details that are
+specific to this repo.
+
 ## History
 
 v1 was a single 3,682-line script covering ~30 formats, written fast and never

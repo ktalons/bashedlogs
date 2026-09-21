@@ -1,21 +1,18 @@
 # shellcheck shell=bash
-# auth_ssh.sh - SSH/PAM authentication log analyzer
-#
+# ******************************************************************************
+# *Title: SSH/PAM Authentication Log Analyzer*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Flags SSH/PAM brute force and possible compromise in auth logs.*
+# ******************************************************************************
+
 # Replaces v1's total-keyword-count "brute force detection" with a real
 # per-source sliding window.
-#
-# Counting one attempt exactly once is the whole ballgame here:
-#   - Debian/Ubuntu sshd logs BOTH `pam_unix(sshd:auth): authentication
-#     failure` and `Failed password` for a single failed attempt. Counting both
-#     doubled every figure and halved the effective --bf-threshold, so three
-#     attempts could raise a "12 failures" alert. sshd's own `Failed <method>`
-#     line is authoritative; the PAM line is only used as the failure stream
-#     when a log contains no sshd failure lines at all (filtered exports).
-#   - `Invalid user` preambles are enumeration signal, not separate failures.
-#   - `Failed publickey`/`Failed none` are routine negotiation noise, counted
-#     as probes rather than credential attempts.
+
+# *--- Registration ---*
 
 register_format auth_ssh "SSH/PAM auth logs (sshd, brute force windows, compromise heuristic)"
+
+# *--- Detection ---*
 
 auth_ssh_detect() {
   local hits
@@ -29,6 +26,18 @@ auth_ssh_detect() {
   fi
 }
 
+# *--- Analysis ---*
+
+# NOTE: Counting one attempt exactly once is the whole ballgame here.
+#   - Debian/Ubuntu sshd logs BOTH `pam_unix(sshd:auth): authentication
+#     failure` and `Failed password` for a single failed attempt. Counting both
+#     doubled every figure and halved the effective --bf-threshold, so three
+#     attempts could raise a "12 failures" alert. sshd's own `Failed <method>`
+#     line is authoritative; the PAM line is only used as the failure stream
+#     when a log contains no sshd failure lines at all (filtered exports).
+#   - `Invalid user` preambles are enumeration signal, not separate failures.
+#   - `Failed publickey`/`Failed none` are routine negotiation noise, counted
+#     as probes rather than credential attempts.
 auth_ssh_analyze() {
   local file=$1
   local assume_year="${BASHEDLOGS_ASSUME_YEAR:-$(date +%Y)}"

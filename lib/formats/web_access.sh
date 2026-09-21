@@ -1,9 +1,18 @@
 # shellcheck shell=bash
-# web_access.sh - Apache/NGINX access logs (common and combined formats)
-# One analyzer for both servers; v1 shipped an apache analyzer plus an
+# ******************************************************************************
+# *Title: Apache/NGINX Access Log Analyzer*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Flags scanners and injection probes in Apache and NGINX logs.*
+# ******************************************************************************
+
+# NOTE: One analyzer for both servers; v1 shipped an apache analyzer plus an
 # unreachable duplicate - this replaces that pair.
 
+# *--- Registration ---*
+
 register_format web_access "Apache/NGINX access logs (status mix, scanners, injection probes)"
+
+# *--- Detection ---*
 
 web_access_detect() {
   local hits
@@ -17,6 +26,8 @@ web_access_detect() {
     echo 0
   fi
 }
+
+# *--- Analysis ---*
 
 web_access_analyze() {
   local file=$1

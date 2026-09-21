@@ -1,12 +1,18 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # config globals here are consumed by other lib/ modules
-# cli.sh - argument parsing, main entry, exit-code contract
-#
+# ******************************************************************************
+# *Title: Command-Line Interface*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Handles argument parsing, the entry point, and exit codes.*
+# ******************************************************************************
+
 # Exit codes:
 #   0  analysis ran; no findings at/above --fail-level (or no --fail-level)
 #   1  usage or runtime error
 #   2  input missing/unreadable, or detection fell back to generic under --strict
 #   3  findings at or above --fail-level
+
+# *--- Configuration ---*
 
 LOGFILE=""
 OUTPUT_MODE="pretty"
@@ -21,6 +27,8 @@ DEFANG=0
 ENRICH_ONLINE=0
 MMDB_DIR="${BASHEDLOGS_MMDB_DIR:-}"
 CLEANUP_FILE=""
+
+# *--- Usage and Errors ---*
 
 usage() {
   cat <<'EOF'
@@ -62,6 +70,8 @@ die_usage() {
 require_arg() {
   if [ "$2" -lt 2 ]; then die_usage "$1 needs a value"; fi
 }
+
+# *--- Argument Parsing ---*
 
 parse_args() {
   while [ "$#" -gt 0 ]; do
@@ -134,6 +144,8 @@ parse_args() {
   fi
 }
 
+# *--- Input Handling ---*
+
 cleanup_tmp() {
   if [ -n "$CLEANUP_FILE" ]; then rm -f -- "$CLEANUP_FILE"; fi
 }
@@ -155,6 +167,8 @@ prepare_input() {
     exit 2
   fi
 }
+
+# *--- Entry Point ---*
 
 main() {
   parse_args "$@"

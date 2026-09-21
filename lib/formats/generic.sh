@@ -1,13 +1,24 @@
 # shellcheck shell=bash
-# generic.sh - fallback analyzer for logs with no dedicated format module
+# ******************************************************************************
+# *Title: Generic Fallback Analyzer*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Applies keyword and IP-frequency heuristics to unmatched logs.*
+# ******************************************************************************
+
 # Honest about what it is: keyword heuristics + IP frequency, labeled generic.
 
+# *--- Registration ---*
+
 register_format generic "generic security heuristics (fallback for unrecognized formats)"
+
+# *--- Detection ---*
 
 generic_detect() {
   # Never competes in detection; it is the explicit fallback.
   echo 0
 }
+
+# *--- Analysis ---*
 
 generic_analyze() {
   local file=$1

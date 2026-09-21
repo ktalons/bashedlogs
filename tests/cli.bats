@@ -1,7 +1,13 @@
 #!/usr/bin/env bats
-# cli.bats - argument handling and the usage half of the exit-code contract
+# ******************************************************************************
+# *Title: CLI Argument Handling*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests argument parsing and usage-error exit codes.*
+# ******************************************************************************
 
 load test_helper
+
+# *--- Version and Help ---*
 
 @test "--version prints the version" {
   run "$BL" --version
@@ -15,6 +21,8 @@ load test_helper
   [[ "$output" == *"Usage:"* ]]
   [[ "$output" == *"--fail-level"* ]]
 }
+
+# *--- Usage Errors ---*
 
 @test "no arguments is a usage error (exit 1)" {
   run "$BL"
@@ -37,16 +45,22 @@ load test_helper
   [ "$status" -eq 1 ]
 }
 
+# *--- File Errors ---*
+
 @test "missing input file exits 2" {
   run "$BL" /no/such/file.log
   [ "$status" -eq 2 ]
 }
+
+# *--- Format Listing ---*
 
 @test "--list-formats includes generic" {
   run "$BL" --list-formats
   [ "$status" -eq 0 ]
   [[ "$output" == *generic* ]]
 }
+
+# *--- Help Content ---*
 
 @test "help documents every implemented flag" {
   run "$BL" --help
@@ -65,6 +79,8 @@ load test_helper
   run "$BL" --help
   [[ "$output" == *"no network call is ever made"* ]]
 }
+
+# *--- Flag Parsing ---*
 
 @test "every documented flag is accepted by the parser" {
   run "$BL" --iocs --defang --enrich-online --bf-threshold 5 --bf-window 30 \

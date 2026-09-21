@@ -1,7 +1,13 @@
 #!/usr/bin/env bats
-# output.bats - JSON/NDJSON validity and pretty-mode basics
+# ******************************************************************************
+# *Title: Output Formats*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests JSON and NDJSON validity plus pretty-mode color handling.*
+# ******************************************************************************
 
 load test_helper
+
+# *--- JSON Output ---*
 
 @test "json output parses and has the expected shape" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/generic/mixed.log\" | jq -e '.tool, .format, .metrics, .findings, .threat' >/dev/null"
@@ -22,6 +28,8 @@ load test_helper
   [ "$status" -eq 0 ]
 }
 
+# *--- NDJSON Output ---*
+
 @test "ndjson emits one parseable object per line, summary last" {
   run bash -c "\"$BL\" -o ndjson \"$FIXTURES/generic/mixed.log\" | jq -r .type"
   [ "$status" -eq 0 ]
@@ -31,6 +39,8 @@ load test_helper
   done
 }
 
+# *--- Pretty Output ---*
+
 @test "pretty output with --no-color has no escape bytes" {
   run "$BL" --no-color "$FIXTURES/generic/mixed.log"
   [ "$status" -eq 0 ]
@@ -38,11 +48,15 @@ load test_helper
   [[ "$output" != *$'\033'* ]]
 }
 
+# *--- Input Handling ---*
+
 @test "stdin input via - reports (stdin) as the file" {
   run bash -c "cat \"$FIXTURES/generic/mixed.log\" | \"$BL\" -o json - | jq -r .file"
   [ "$status" -eq 0 ]
   [ "$output" = "(stdin)" ]
 }
+
+# *--- Color Handling ---*
 
 @test "NO_COLOR env disables colors even on pretty" {
   run bash -c "NO_COLOR=1 \"$BL\" \"$FIXTURES/generic/clean.log\""

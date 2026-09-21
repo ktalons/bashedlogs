@@ -1,5 +1,11 @@
 # shellcheck shell=bash
-# output.sh - color handling, JSON escaping, pretty/json/ndjson emitters
+# ******************************************************************************
+# *Title: Output Formatting*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Handles color, JSON escaping, and the three output emitters.*
+# ******************************************************************************
+
+# *--- Color State ---*
 
 C_RED="" C_GREEN="" C_YELLOW="" C_CYAN="" C_MAGENTA="" C_BOLD="" C_DIM="" C_RESET=""
 
@@ -29,6 +35,8 @@ sev_color() {
     *) printf '%s' "$C_DIM" ;;
   esac
 }
+
+# *--- JSON Helpers ---*
 
 # json_escape <string>: prints a JSON-safe version (no surrounding quotes).
 json_escape() {
@@ -115,6 +123,8 @@ enrichment_results_json() {
   printf '{%s}' "$out"
 }
 
+# *--- JSON / NDJSON Emitters ---*
+
 emit_json() {
   local file=$1 fmt=$2 score level findings="" iocs="" i
   score=$(threat_score)
@@ -186,6 +196,8 @@ emit_ndjson() {
     "${#R_SEV[@]}" \
     "$score" "$level"
 }
+
+# *--- Pretty Emitter ---*
 
 emit_pretty() {
   local file=$1 fmt=$2 score level i
@@ -259,6 +271,8 @@ pretty_ioc_kind() {
   done
   printf '  %-10s %s\n' "$label" "$line"
 }
+
+# *--- Dispatch ---*
 
 emit_output() {
   local file=$1 fmt=$2

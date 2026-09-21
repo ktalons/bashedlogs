@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
-# mkfixtures.sh - regenerate the committed test fixtures under tests/fixtures/
-# All fixtures are synthetic and deterministic: fixed timestamps, RFC 5737 /
-# private IPs, invented hostnames. No real-world log data is ever committed.
+# ******************************************************************************
+# *Title: Test Fixture Generator*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Regenerates the synthetic test fixtures under tests/fixtures/.*
+# ******************************************************************************
+# SECURITY: All fixtures are synthetic and deterministic: fixed timestamps,
+# RFC 5737 / private IPs, invented hostnames. No real-world log data is
+# ever committed.
 set -euo pipefail
+
+# *--- Setup ---*
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FIX="$ROOT/tests/fixtures"
+
+# *--- Generic Fixtures ---*
 
 mkdir -p "$FIX/generic"
 
@@ -39,12 +48,14 @@ cat > "$FIX/generic/clean.log" <<'EOF'
 2025-06-01T09:00:05Z appsvc INFO heartbeat ok version=4.2.1 build=20250601
 EOF
 
+# *--- Auth Fixtures ---*
+
 mkdir -p "$FIX/auth"
 
 # auth/bruteforce.log: 12 failures from one IP inside 40s (must trip the
 # default 10-in-60s window), then a successful login from the same IP 50s
-# later (must trip the possible-compromise heuristic). Note "Jun  1" single
-# digit days exercise syslog's double-space alignment.
+# later (must trip the possible-compromise heuristic).
+# NOTE: "Jun  1" single digit days exercise syslog's double-space alignment.
 cat > "$FIX/auth/bruteforce.log" <<'EOF'
 Jun  1 09:58:11 bastion sshd[2188]: Accepted publickey for kyle from 198.51.100.7 port 50122 ssh2: RSA SHA256:aBcD
 Jun  1 09:58:11 bastion sshd[2188]: pam_unix(sshd:session): session opened for user kyle by (uid=0)
@@ -98,6 +109,8 @@ Jun  3 13:02:11 bastion sshd[4010]: pam_unix(sshd:session): session opened for u
 Jun  3 13:40:00 bastion sshd[4015]: Connection closed by 198.51.100.8 port 50231 [preauth]
 Jun  3 17:22:05 bastion sshd[4010]: pam_unix(sshd:session): session closed for user sandra
 EOF
+
+# *--- Syslog, Journald, and Web Fixtures ---*
 
 mkdir -p "$FIX/syslog" "$FIX/journald" "$FIX/web"
 
@@ -177,6 +190,8 @@ cat > "$FIX/web/quiet.log" <<'EOF'
 198.51.100.23 - - [11/Jun/2025:09:04:30 -0700] "POST /api/contact HTTP/1.1" 200 310 "-" "Mozilla/5.0"
 EOF
 
+# *--- Wazuh, DNS, Firewall, and IOC Fixtures ---*
+
 mkdir -p "$FIX/wazuh" "$FIX/dns" "$FIX/firewall" "$FIX/iocs"
 
 # wazuh/alerts.json: level histogram spanning low/mid/high/critical, MITRE ids,
@@ -233,6 +248,8 @@ cat > "$FIX/iocs/sample.log" <<'EOF'
 2025-06-12T20:00:06Z dns INFO query c2.badhost.example.org from 192.0.2.44
 EOF
 
+# *--- Regression Fixtures ---*
+
 mkdir -p "$FIX/regressions"
 
 # regressions/pam-dual.log: Debian/Ubuntu sshd logs BOTH a pam_unix line and a
@@ -282,12 +299,15 @@ cat > "$FIX/regressions/wazuh-nested.json" <<'EOF'
 {"manager":{"name":"wazuh-mgr"},"decoder":{"name":"pam"},"timestamp":"2025-06-12T10:00:02.000-0700","agent":{"id":"002","name":"db-01"},"rule":{"level":12,"description":"user said \"hi\" then failed","id":"5716"},"data":{"srcip":"2001:db8::9"}}
 EOF
 
+# *--- Hostile Input Fixtures ---*
+
 mkdir -p "$FIX/hostile"
 
 # hostile/injection.log: log content is attacker-controlled, so this fixture
-# carries quotes, backslashes, shell metacharacters, printf specifiers, unicode,
-# a literal tab, and glob characters inside usernames. Output must stay valid
-# JSON and nothing here may ever be executed or expanded.
+# carries quotes, backslashes, shell metacharacters, printf specifiers,
+# unicode, a literal tab, and glob characters inside usernames.
+# SECURITY: Output must stay valid JSON and nothing here may ever be
+# executed or expanded.
 {
   printf 'Jun  1 10:00:00 h sshd[1]: Failed password for invalid user "quote\\back\\\\slash from 203.0.113.66 port 1 ssh2\n'
   # shellcheck disable=SC2016  # the point is that these stay literal, unexpanded

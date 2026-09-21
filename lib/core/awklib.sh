@@ -1,13 +1,19 @@
 # shellcheck shell=bash
-# awklib.sh - shared awk helper functions, injected into analyzer programs.
-#
+# ******************************************************************************
+# *Title: Awk Function Library*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Shared awk helper functions injected into analyzer programs.*
+# ******************************************************************************
+
 # Usage:  awk "$AWK_IP_LIB"'{ ... bl_valid_ip($1) ... }' file
-#
+
 # One definition of "is this an address" for every analyzer. Before this
 # existed each format carried its own IPv4-only copy, so an IPv6 brute force
 # was counted in the totals but never made it into any per-source detector -
 # the tool reported failures and no finding, which is worse than reporting
 # nothing at all.
+
+# *--- Library Definition ---*
 
 # shellcheck disable=SC2034  # consumed by lib/formats/*.sh
 AWK_IP_LIB='

@@ -1,7 +1,13 @@
 #!/usr/bin/env bats
-# formats.bats - syslog, journald, and web_access analyzers
+# ******************************************************************************
+# *Title: Syslog, Journald, and Web Access Analyzers*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests syslog, journald, and web_access detection and findings.*
+# ******************************************************************************
 
 load test_helper
+
+# *--- Syslog ---*
 
 @test "syslog: detected and flags oom, segfault, sudo failures" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/syslog/system.log\" | jq -r '.format, ([.findings[].category] | sort | join(\",\"))'"
@@ -9,6 +15,8 @@ load test_helper
   [ "${lines[0]}" = "syslog" ]
   [ "${lines[1]}" = "oom-killer,segfault,sudo-failures" ]
 }
+
+# *--- Journald ---*
 
 @test "journald short-iso: detected with oom finding" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/journald/short-iso.log\" | jq -r '.format, .metrics.input_mode, ([.findings[].category] | join(\",\"))'"
@@ -25,6 +33,8 @@ load test_helper
   [ "${lines[1]}" = "json" ]
   [ "${lines[2]}" = "journal-critical,oom-killer,segfault" ]
 }
+
+# *--- Web Access ---*
 
 @test "web_access: detected with correct status accounting" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/web/access.log\" | jq -r '.format, .metrics.total_requests, .metrics.status_2xx, .metrics.status_3xx, .metrics.status_4xx, .metrics.status_5xx'"
@@ -55,6 +65,8 @@ load test_helper
   [ "${lines[0]}" = "0" ]
   [ "${lines[1]}" = "none" ]
 }
+
+# *--- Detection Guardrails ---*
 
 @test "generic fixtures still route to generic (no new-format claim-jumping)" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/generic/mixed.log\" | jq -r .format"

@@ -1,7 +1,13 @@
 #!/usr/bin/env bats
-# soc_formats.bats - wazuh_alerts, dns_route53, firewall
+# ******************************************************************************
+# *Title: Wazuh, DNS, and Firewall Analyzers*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Tests Wazuh, Route53, and firewall detection and findings.*
+# ******************************************************************************
 
 load test_helper
+
+# *--- Wazuh ---*
 
 @test "wazuh: detected from alerts.json shape" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/wazuh/alerts.json\" | jq -r .format"
@@ -32,6 +38,8 @@ load test_helper
   [[ "$output" == "bastion (11)"* ]]
 }
 
+# *--- DNS ---*
+
 @test "dns: detected and long-name tunneling flagged" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/dns/route53.log\" | jq -r '.format, [.findings[] | select(.category==\"dns-tunneling-length\")][0].data.count'"
   [ "${lines[0]}" = "dns_route53" ]
@@ -44,6 +52,8 @@ load test_helper
   [ "${lines[1]}" = "2" ]
   [ "${lines[2]}" = "2" ]
 }
+
+# *--- Firewall ---*
 
 @test "firewall: detected across iptables and pfSense in one file" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/firewall/mixed.log\" | jq -r '.format, .metrics.total_events, .metrics.blocked_events'"
@@ -62,6 +72,8 @@ load test_helper
   run bash -c "\"$BL\" -o json \"$FIXTURES/firewall/mixed.log\" | jq -r .metrics.top_blocked_sources"
   [[ "$output" != *"198.51.100.23"* ]]
 }
+
+# *--- Format Registry ---*
 
 @test "--list-formats shows all eight analyzers" {
   run bash -c "\"$BL\" --list-formats | grep -cE '^  [a-z]'"

@@ -1,8 +1,18 @@
 # shellcheck shell=bash
-# syslog.sh - classic BSD syslog ("Mon DD HH:MM:SS host prog[pid]: msg")
+# ******************************************************************************
+# *Title: Classic Syslog Analyzer*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Analyzes BSD syslog for kernel, sudo, and error-rate signals.*
+# ******************************************************************************
+
+# NOTE: Targets classic BSD syslog ("Mon DD HH:MM:SS host prog[pid]: msg").
 # General system triage: who is logging, what is failing, kernel red flags.
 
+# *--- Registration ---*
+
 register_format syslog "classic syslog (system triage: oom, segfaults, sudo, error rates)"
+
+# *--- Detection ---*
 
 syslog_detect() {
   local hits
@@ -16,6 +26,8 @@ syslog_detect() {
     echo 0
   fi
 }
+
+# *--- Analysis ---*
 
 syslog_analyze() {
   local file=$1

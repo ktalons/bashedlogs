@@ -1,7 +1,12 @@
 #!/usr/bin/env bats
-# regressions.bats - one test per defect found in the pre-release audit.
-# Each of these failed before its fix; the comment records what the tool
-# reported at the time so a regression is unambiguous.
+# ******************************************************************************
+# *Title: Regression Tests*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: One test per defect found in the pre-release audit.*
+# ******************************************************************************
+
+# NOTE: each test failed before its fix; the note above every group below
+# records what the tool reported at the time so a regression is unambiguous.
 
 load test_helper
 
@@ -13,7 +18,8 @@ setup() {
   fi
 }
 
-# --- Debian dual logging: reported 6 failures for 3 real attempts -------------
+# *--- Debian Dual Logging ---*
+# NOTE: dual-logged sshd+PAM reported 6 failures for 3 real attempts.
 
 @test "dual-logged sshd+PAM counts each attempt once" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/pam-dual.log\" | jq -r '.metrics.failed_auth, .metrics.failure_source, .metrics.top_attacking_ips'"
@@ -39,7 +45,8 @@ setup() {
   [ "${lines[1]}" = "pam" ]
 }
 
-# --- IPv6: counted failures but produced zero findings ------------------------
+# *--- IPv6 Handling ---*
+# NOTE: IPv6 addresses were counted as failures but produced zero findings.
 
 @test "an IPv6 brute force is detected, not silently ignored" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/ipv6-brute.log\" | jq -r '.metrics.failed_auth, .metrics.top_attacking_ips, [.findings[]|select(.category==\"brute-force\")][0].data.ip'"
@@ -69,7 +76,8 @@ setup() {
   [ -z "$output" ]
 }
 
-# --- pfSense/iptables ICMP: type and code were reported as ports --------------
+# *--- ICMP Port Reporting ---*
+# NOTE: pfSense/iptables ICMP type and code were reported as ports.
 
 @test "ICMP events contribute no ports" {
   run bash -c "\"$BL\" --format firewall -o json \"$FIXTURES/regressions/firewall-icmp.log\" | jq -r .metrics.top_target_ports"
@@ -83,7 +91,8 @@ setup() {
   [ "${lines[1]}" = "6" ]
 }
 
-# --- Wazuh: manager.name shadowed agent.name on every alert ------------------
+# *--- Wazuh Agent Attribution ---*
+# NOTE: manager.name shadowed agent.name on every alert.
 
 @test "wazuh attributes alerts to agent.name, not manager.name" {
   run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/wazuh-nested.json\" | jq -r .metrics.top_agents"
@@ -107,7 +116,9 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
-# --- Realistic fixture shape: the clean fixture hid the bug above -------------
+# *--- Fixture Shape Guard ---*
+# NOTE: the clean wazuh fixture hid the manager/agent shadowing bug above
+# because it carried no sibling name fields to conflict.
 
 @test "the main wazuh fixture carries manager and decoder names" {
   # If this fixture ever loses its sibling name fields, the misattribution bug
@@ -119,7 +130,8 @@ setup() {
   [[ "$output" == "bastion (11)"* ]]
 }
 
-# --- Free-text values carrying a raw tab used to split the internal row -------
+# *--- Tab-Delimited Field Safety ---*
+# NOTE: a raw tab in a free-text value used to split the internal row.
 
 @test "a raw tab in a rule description is folded, not truncated" {
   printf '{"manager":{"name":"m"},"agent":{"id":"1","name":"web-01"},"rule":{"level":12,"description":"tab\there and more"},"data":{"srcip":"203.0.113.9"}}\n' \
@@ -128,7 +140,8 @@ setup() {
   [ "$output" = "tab here and more (1)" ]
 }
 
-# --- Confirmed non-defects, pinned so they are not "fixed" by accident -------
+# *--- Confirmed Non-Defects ---*
+# NOTE: pinned so these behaviors are not "fixed" by accident.
 
 @test "concatenated rotated logs still detect a burst" {
   # An out-of-order Dec line ahead of June traffic must not suppress the burst.

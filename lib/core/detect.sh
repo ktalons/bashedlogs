@@ -1,10 +1,15 @@
 # shellcheck shell=bash
-# detect.sh - format registry and detection engine
+# ******************************************************************************
+# *Title: Format Detection*
+# *Author: Kyle Versluis (@ktalons)*
+# *Description: Format registry and the confidence-scored detection engine.*
+# ******************************************************************************
+
 # Each lib/formats/<fmt>.sh calls register_format on source and defines
 #   <fmt>_detect   -> prints confidence 0-100, reads the SAMPLE global
 #   <fmt>_analyze  -> takes the log file path, emits report_add/report_metric
-# Detection loads the sample ONCE into a variable, so detectors never pipe
-# `while read` subshells (the v1 return-in-subshell bug is structurally gone).
+
+# *--- Registry State ---*
 
 FORMATS=()
 declare -A FORMAT_DESC
@@ -12,11 +17,18 @@ declare -A FORMAT_DESC
 DETECT_THRESHOLD=50
 SAMPLE=""
 
+# *--- Registry ---*
+
 register_format() {
   FORMATS+=("$1")
   FORMAT_DESC["$1"]=$2
 }
 
+# *--- Detection ---*
+
+# NOTE: The sample is loaded once into a variable so detectors never run inside
+# a `while read` subshell. That is what makes the v1 return-in-subshell bug
+# structurally impossible rather than merely fixed.
 # load_sample <file>: first 200 lines into SAMPLE.
 load_sample() {
   # shellcheck disable=SC2034  # SAMPLE is read by the per-format detectors
@@ -47,6 +59,8 @@ detect_format() {
   echo "generic"
   return 1
 }
+
+# *--- Queries ---*
 
 format_registered() {
   local fmt
