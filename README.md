@@ -29,7 +29,7 @@ Auto-detect and report:
 ```
 
 ```
-bashedlogs v2.0.0
+bashedlogs v2.0.1
   file    /var/log/auth.log
   format  auth_ssh
 
@@ -121,6 +121,25 @@ Online ASN (Team Cymru) and reverse DNS, explicitly opted into:
 With neither available the report says enrichment was skipped and everything
 else still works.
 
+## Hostile logs
+
+Whoever sends the traffic writes the log, so every byte of it is treated as
+hostile. Nothing from a log is executed, and in the default report no control
+character from a log reaches your terminal. An escape sequence prints as
+visible text such as `\x1b[2J`, so a crafted line cannot erase or rewrite the
+findings around it. If you see one in a report, the log carried a raw escape
+sequence, and that is worth a look on its own. Error messages that quote a
+file name get the same treatment. JSON output escapes newlines and tabs and
+drops the other C0 control characters.
+
+Log text is handled as bytes whatever your locale, so an invalid byte sequence
+cannot stop a run. Your locale still decides how the report displays. Under
+UTF-8 and C the C1 controls (U+0080 to U+009F) are shown as escapes too, and
+legitimate text in GBK, Shift-JIS, and the other multibyte encodings displays
+unchanged under its own locale.
+
+Known gaps are listed in the [CHANGELOG](CHANGELOG.md).
+
 ## Development
 
 ```bash
@@ -129,6 +148,7 @@ cd bashedlogs
 shellcheck -x bin/bashedlogs lib/core/*.sh lib/formats/*.sh tools/*.sh
 bats tests/
 tools/build.sh                 # -> dist/bashedlogs, the single-file artifact
+BASHEDLOGS_UNDER_TEST="$PWD/dist/bashedlogs" bats tests/   # same suite, built file
 ```
 
 `bats-core` and `jq` are test-only dependencies. The runtime has none.

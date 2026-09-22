@@ -1,5 +1,73 @@
 # Changelog
 
+## v2.0.1
+
+A security release. A Claude Security review of v2.0.0 found five ways a
+crafted log could mislead the analyst reading the report. This release fixes
+four of them, plus two more found while fixing those. The fifth is still open
+and listed under Known issues.
+
+### Fixed in security review
+
+- Pretty output printed text from the log as it was: usernames, request paths,
+  DNS names, program names, Wazuh rule descriptions, IOC URLs, and the file
+  name. An escape sequence in a log line could erase or rewrite findings
+  already on screen, retitle the terminal, or write to the clipboard where the
+  terminal allows OSC 52. `--no-color` did not help, since it only drops the
+  tool's own colors. Every control character in log text now prints as a
+  visible escape such as `\x1b[2J`. That covers C0, DEL, and the UTF-8 C1
+  controls (U+0080 to U+009F). Under ISO-8859 and EUC locales the raw C1 bytes
+  are escaped too. Under GBK, Shift-JIS, Big5, KOI8, and the Windows code pages
+  those bytes are parts of characters, so they are left alone and legitimate
+  text displays unchanged.
+- The sanitizer runs in linear time. A per-character substitution takes
+  minutes on bash 4.0 for a log dense with escape bytes, which would have
+  traded terminal injection for a stalled report. CI now runs such a log under
+  bash 4.0 and busybox and fails if the report takes longer than 20 seconds.
+- Apache logs an embedded double quote as `\"`. Splitting fields on every `"`
+  ended the request early, so a SQL injection, XSS, or traversal payload placed
+  after an escaped quote never reached the checks, and attacker text was read
+  as the status code. Quoted fields are now parsed with their escapes, in the
+  request, user, referer, and user agent.
+
+### Fixed while fixing those
+
+- Error messages quoted a file name or option as it was on stderr, which
+  reaches the same terminal as the report. A file name carrying escape
+  sequences could run them through the `cannot read`, `--strict`, and
+  `unknown option` messages. Those go through the same sanitizer now.
+- Under a UTF-8 or EUC locale, macOS awk stops at the first byte sequence that
+  is invalid in that locale. One such byte anywhere in a log ended the run with
+  exit 2 and no report, and awk echoed the raw line, escape bytes included, to
+  stderr. Under EUC, bash could also add a stray byte to text it passed along.
+  The analyzers now run under `LC_ALL=C` and treat log text as bytes. The
+  caller's locale still decides which bytes the report shows as C1 controls.
+
+### Changed
+
+- Entries tied on count in a top-N list are now ordered by byte value under
+  every locale. They used to follow the caller's collation, so two machines
+  could list different entries in the top five for the same log.
+- Source files follow the code notation standard: a header on every file,
+  section headings, and `NOTE:`, `WARN:`, and `SECURITY:` markers. Comments
+  only. No executable line changed.
+- 140 bats tests, up from 106.
+
+### Known issues
+
+- The SSH analyzer takes the source IP from the first `from` in a line, and
+  sshd logs the client's username verbatim, spaces included. An attacker who
+  tries the username `x from 198.51.100.7` gets that address blamed for the
+  brute force, and a later real login from it is flagged as a possible
+  compromise. Both attempted fixes broke other sshd log shapes the analyzer
+  reads correctly, so it is not fixed yet. Until it is, check a brute-force
+  source against sshd's own `from <ip> port <n>` text in the raw log before
+  acting on it.
+- Under bash 4.0, `--iocs -o json` writes invalid JSON (`"domains":,`) when
+  any IOC category is empty, and still exits 0. Pretty output, NDJSON, and
+  `-o json` without `--iocs` work on 4.0, and the bash 5 that CI tests on is
+  not affected.
+
 ## v2.0.0
 
 A ground-up rewrite. v1 was one 3,682-line file with no tests; v2 is a modular
@@ -21,7 +89,7 @@ tree that still ships as a single portable file.
   No network call is made unless `--enrich-online` is passed.
 - Reads stdin with `-`, honors `NO_COLOR`, and `--list-formats` prints the
   registry.
-- 72 bats tests, run in CI against both the source tree and the built
+- 106 bats tests, run in CI against both the source tree and the built
   single-file artifact, on Linux and macOS plus a bash 4.0 floor check.
 
 ### Fixed

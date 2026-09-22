@@ -36,6 +36,19 @@ when one is needed, per section 7.
   is dense with awk; `tools/mkfixtures.sh` is mostly heredoc log data.
 - A `@test "..."` name in a `.bats` file is code. Tests assert against it.
 
+## Output safety
+
+- Log text never reaches a terminal raw, on stdout in pretty mode or on stderr.
+  Call `pretty_safe "$v" 2>/dev/null` and print `$PRETTY_SAFE`. A new printing
+  site needs its own test in `tests/hostile.bats`.
+- `bin/bashedlogs` exports `LC_ALL=C` just before `main`, below
+  `# @BUNDLE-SKIP-END`, so the release artifact keeps it. `PRETTY_LOCALE` is the
+  only read of the caller's locale, and it happens at load time, before that
+  export.
+- Locale tests skip when the locale is not installed. Linux runners lack the
+  legacy ones (GBK, Shift-JIS, ISO-8859, EUC), so the macOS job is where they
+  actually run.
+
 ## Verification
 
 Nothing is done until these pass:
