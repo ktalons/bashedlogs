@@ -83,6 +83,26 @@ jobs:
             test "$rc" -eq 3
             ./dist/bashedlogs --fail-level low tests/fixtures/generic/clean.log >/dev/null
           '
+      - name: Control bytes escaped in bounded time under bash 4.0 / busybox
+        # bash 4.0 runs ${v//x/y} in superlinear time, and busybox od/awk carry
+        # the linear rewrite, so both halves of the pretty sanitizer are checked here.
+        # BEL and a UTF-8 C1 CSI ride in front of the ESC run on every line.
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo bash:4.0 bash -ec '
+            esc=$(printf "\033") bel=$(printf "\007") csi=$(printf "\302\233") p=""
+            for ((k = 0; k < 2600; k++)); do p="$p${esc}[A"; done
+            for s in 1 2 3 4 5; do
+              printf "203.0.113.66 - - [01/Jun/2025:10:00:0%s +0000] \"GET /%s%s%s%s HTTP/1.1\" 404 0 \"-\" \"curl/8.0\"\n" "$s" "$s" "$bel" "$csi" "$p"
+            done > /tmp/dense.log
+            for bl in ./bin/bashedlogs ./dist/bashedlogs; do
+              start=$SECONDS
+              out=$("$bl" --no-color /tmp/dense.log)
+              echo "$bl: $((SECONDS - start))s"
+              test $((SECONDS - start)) -lt 20
+              case $out in *"$esc"* | *"$bel"* | *"$csi"*) echo "raw control byte in pretty output"; exit 1 ;; esac
+              case $out in *"/1\\x07\\xc2\\x9b\\x1b[A\\x1b[A"*) ;; *) echo "BEL, CSI or ESC not shown as text"; exit 1 ;; esac
+            done
+          '
 
   build:
     runs-on: ubuntu-latest

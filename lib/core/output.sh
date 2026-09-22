@@ -197,22 +197,159 @@ emit_ndjson() {
     "$score" "$level"
 }
 
+# *--- Pretty Sanitizing ---*
+
+# SECURITY: pretty output goes to a terminal, and much of it is text copied
+# from the log (paths, usernames, URLs), which is attacker-controlled. A raw
+# ESC or BEL there would let a log line run CSI/OSC sequences that erase or
+# rewrite findings already on screen, so each such value is printed with its
+# control characters shown as visible \xHH text. JSON output is not affected.
+
+# The locale the report is shown in. Read at load time: pretty_safe shadows
+# LC_ALL, so pretty_ctrl_init cannot see the caller's value itself.
+PRETTY_LOCALE=${LC_ALL:-${LC_CTYPE:-${LANG:-}}}
+
+# Set on first use. PRETTY_CTRL_SET holds C0 (\001-\037) and DEL, and then,
+# by PRETTY_C1: 1 adds \302, the lead byte of the UTF-8 form of every C1
+# control (U+0080-U+009F, bytes \302\200-\302\237); 2 adds the raw C1 bytes
+# \200-\237 other than SS2 and SS3 (\216, \217), for charsets that keep that
+# range for controls. EUC puts SS2 and SS3 inside characters, and all they
+# do is pick the set the next character comes from, so they stay.
+# NOTE: under 0 and 1, raw \200-\237 bytes are left alone. In UTF-8 they are
+# continuation bytes of ordinary characters, and a lone one is invalid UTF-8
+# that a UTF-8 terminal draws as a replacement character instead of acting
+# on. In GBK, Shift-JIS and Big5 they are bytes of double-byte characters.
+PRETTY_CTRL_SET=""
+PRETTY_C1=0
+PRETTY_SAFE=""
+
+# Rewrites od's hex dump of one value as a printf %b argument: \0ooo for a
+# byte kept as it is, \\xHH for a control byte shown as text, a \302 pair
+# shown as \\xc2\\xHH when c1 is 1, and a raw C1 byte other than SS2 and SS3
+# shown as \\xHH when c1 is 2. awk only ever sees ASCII hex here, so every
+# awk treats the input the same whatever bytes the value holds.
+# shellcheck disable=SC2016  # an awk program; its $i is awk's, not the shell's
+PRETTY_AWK='
+BEGIN { H = "0123456789abcdef" }
+{
+  for (i = 1; i <= NF; i++) {
+    t = tolower($i)
+    if (pend) {
+      pend = 0
+      if (t ~ /^[89]/) { printf "\\\\xc2\\\\x%s", t; continue }
+      printf "\\0302"
+    }
+    if (c1 == 1 && t == "c2") { pend = 1; continue }
+    v = (index(H, substr(t, 1, 1)) - 1) * 16 + index(H, substr(t, 2, 1)) - 1
+    if (v < 32 || v == 127 || (c1 == 2 && v >= 128 && v < 160 && v != 142 && v != 143))
+      printf "\\\\x%s", t
+    else printf "\\0%03o", v
+  }
+}
+END { if (pend) printf "\\0302" }
+'
+
+pretty_ctrl_init() {
+  local i oct ch cs
+  # The policy follows the charset the locale really uses, as locale charmap
+  # reports it. Where that prints nothing (macOS bare names such as en_US,
+  # which are UTF-8) or locale is missing (busybox), the charset part of the
+  # name stands in, and a name without one gets the default.
+  # The default covers UTF-8, C, POSIX, and any charset not listed below: C0,
+  # DEL and the \302 pairs. In C the pair is never printable text either: it
+  # is a UTF-8 C1 control, or a Latin-1 A with circumflex followed by one.
+  # ISO-8859 and EUC charsets keep \200-\237 for C1 controls, so there those
+  # bytes are escaped one by one, SS2 and SS3 aside.
+  # GBK, Shift-JIS, Big5, KOI8 and the numbered code pages put \200-\237
+  # bytes inside ordinary characters, so they get C0 and DEL only; none of
+  # them uses a C0 or DEL byte inside a character.
+  # NOTE: an unlisted charset therefore costs, at worst, a legitimate byte
+  # pair shown as \xHH text, never a control left live.
+  cs=$(LC_ALL=$PRETTY_LOCALE locale charmap 2>/dev/null) || cs=""
+  if [ -z "$cs" ]; then
+    case $PRETTY_LOCALE in
+      *.*)
+        cs=${PRETTY_LOCALE#*.}
+        cs=${cs%%@*}
+        ;;
+    esac
+  fi
+  case $cs in
+    [Ii][Ss][Oo]8859* | [Ii][Ss][Oo][-_]8859* | [Ee][Uu][Cc]*) PRETTY_C1=2 ;;
+    [Gg][Bb]* | [Ss][Jj][Ii][Ss]* | [Ss][Hh][Ii][Ff][Tt]* | [Bb][Ii][Gg]5* | \
+      [Kk][Oo][Ii]8* | [Cc][Pp][0-9]* | [Ww][Ii][Nn][Dd][Oo][Ww][Ss]-*)
+      PRETTY_C1=0
+      ;;
+    *) PRETTY_C1=1 ;;
+  esac
+  for ((i = 1; i < 160; i++)); do
+    if [ "$i" -ge 32 ] && [ "$i" -lt 127 ]; then continue; fi
+    if [ "$i" -ge 128 ] && [ "$PRETTY_C1" -ne 2 ]; then break; fi
+    if [ "$i" -eq 142 ] || [ "$i" -eq 143 ]; then continue; fi
+    printf -v oct '%03o' "$i"
+    printf -v ch '%b' "\\0$oct"
+    PRETTY_CTRL_SET=$PRETTY_CTRL_SET$ch
+  done
+  if [ "$PRETTY_C1" -eq 1 ]; then PRETTY_CTRL_SET=$PRETTY_CTRL_SET$'\302'; fi
+}
+
+# pretty_safe <value>: sets PRETTY_SAFE to <value> with every control
+# character replaced by \xHH. Returns through a variable, not stdout, so a
+# clean value costs no subshell.
+# SECURITY: LC_ALL=C makes the pattern below, od and awk all work on single
+# bytes. In a multibyte locale bash matches by character, and how it reads an
+# invalid sequence next to a control byte varies by bash and libc version;
+# the C locale takes that question away.
+# SECURITY: a value that holds a control byte is rewritten in one od | awk
+# pass, linear in its length. A ${v//x/y} per control byte is not: bash 4.0
+# tries every match from the end of the string, so ESC-dense log text would
+# stall the report. Most values come from capped lists. The uncapped case is
+# one possible-compromise finding per source IP, which quotes the username:
+# one pass per finding, so the cost still grows linearly with the log.
+# NOTE: callers add 2>/dev/null. When LC_ALL names a locale that is not
+# installed, bash repeats its startup warning about it every time this local
+# LC_ALL is unwound.
+pretty_safe() {
+  local LC_ALL=C fmt
+  if [ -z "$PRETTY_CTRL_SET" ]; then pretty_ctrl_init; fi
+  PRETTY_SAFE=$1
+  # Fast path: nearly every value has no control character.
+  case $PRETTY_SAFE in
+    *["$PRETTY_CTRL_SET"]*) ;;
+    *) return 0 ;;
+  esac
+  fmt=$(printf '%s' "$1" | LC_ALL=C od -An -v -tx1 |
+    LC_ALL=C awk -v c1="$PRETTY_C1" "$PRETTY_AWK") || fmt=""
+  if [ -n "$fmt" ]; then
+    printf -v PRETTY_SAFE '%b' "$fmt"
+  else
+    # Fail closed: a value that could not be rewritten is never shown raw.
+    PRETTY_SAFE="[unprintable]"
+  fi
+}
+
 # *--- Pretty Emitter ---*
 
+# SECURITY: every value that can carry log, file-name, or lookup text goes
+# through pretty_safe before it is printed or wrapped in color.
 emit_pretty() {
-  local file=$1 fmt=$2 score level i
+  local file=$1 fmt=$2 score level i cell
   score=$(threat_score)
   level=$(threat_level "$score")
 
   printf '%s\n' "${C_CYAN}${C_BOLD}bashedlogs${C_RESET}${C_DIM} v${BASHEDLOGS_VERSION}${C_RESET}"
-  printf '  %sfile%s    %s\n' "$C_DIM" "$C_RESET" "$file"
+  pretty_safe "$file" 2>/dev/null
+  printf '  %sfile%s    %s\n' "$C_DIM" "$C_RESET" "$PRETTY_SAFE"
   printf '  %sformat%s  %s\n' "$C_DIM" "$C_RESET" "$fmt"
   echo
 
   if [ "${#M_KEY[@]}" -gt 0 ]; then
     printf '%s\n' "${C_BOLD}Metrics${C_RESET}"
     for i in "${!M_KEY[@]}"; do
-      printf '  %-28s %s\n' "${M_KEY[$i]}" "${M_VAL[$i]}"
+      pretty_safe "${M_KEY[$i]}" 2>/dev/null
+      cell=$PRETTY_SAFE
+      pretty_safe "${M_VAL[$i]}" 2>/dev/null
+      printf '  %-28s %s\n' "$cell" "$PRETTY_SAFE"
     done
     echo
   fi
@@ -222,11 +359,15 @@ emit_pretty() {
     printf '  %snothing flagged%s\n' "$C_GREEN" "$C_RESET"
   else
     for i in "${!R_SEV[@]}"; do
+      pretty_safe "${R_CAT[$i]}" 2>/dev/null
+      cell=$PRETTY_SAFE
+      pretty_safe "${R_MSG[$i]}" 2>/dev/null
       printf '  %s%-8s%s %-16s %s\n' \
         "$(sev_color "${R_SEV[$i]}")" "${R_SEV[$i]}" "$C_RESET" \
-        "${R_CAT[$i]}" "${R_MSG[$i]}"
+        "$cell" "$PRETTY_SAFE"
       if [ -n "${R_KV[$i]}" ]; then
-        printf '           %s%s%s\n' "$C_DIM" "${R_KV[$i]//$'\t'/  }" "$C_RESET"
+        pretty_safe "${R_KV[$i]//$'\t'/  }" 2>/dev/null
+        printf '           %s%s%s\n' "$C_DIM" "$PRETTY_SAFE" "$C_RESET"
       fi
     done
   fi
@@ -243,7 +384,10 @@ emit_pretty() {
     printf '  %-10s %s%s%s\n' "enrich" "$C_DIM" "$ENRICH_STATUS" "$C_RESET"
     if [ "${#E_IP[@]}" -gt 0 ]; then
       for i in "${!E_IP[@]}"; do
-        printf '    %-18s %s\n' "$(maybe_defang "${E_IP[$i]}")" "${E_TXT[$i]}"
+        pretty_safe "$(maybe_defang "${E_IP[$i]}")" 2>/dev/null
+        cell=$PRETTY_SAFE
+        pretty_safe "${E_TXT[$i]}" 2>/dev/null
+        printf '    %-18s %s\n' "$cell" "$PRETTY_SAFE"
       done
     fi
     echo
@@ -267,7 +411,8 @@ pretty_ioc_kind() {
       break
     fi
     if [ -n "$line" ]; then line="$line "; fi
-    line="$line$(maybe_defang "$v")"
+    pretty_safe "$(maybe_defang "$v")" 2>/dev/null
+    line="$line$PRETTY_SAFE"
   done
   printf '  %-10s %s\n' "$label" "$line"
 }
