@@ -58,7 +58,8 @@ report_add() {
     exit 1
   fi
   local kv="" pair
-  for pair in "$@"; do
+  # A finding with no pairs leaves "$@" empty, which bash 4.0 calls unbound.
+  for pair in ${1+"$@"}; do
     pair=${pair//$'\t'/ }
     if [ -z "$kv" ]; then kv=$pair; else kv=$kv$'\t'$pair; fi
   done

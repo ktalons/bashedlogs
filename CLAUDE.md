@@ -49,6 +49,15 @@ when one is needed, per section 7.
   legacy ones (GBK, Shift-JIS, ISO-8859, EUC), so the macOS job is where they
   actually run.
 
+## Bash 4.0 floor
+
+- Under `set -u`, bash 4.0 treats an empty `"$@"` or `"${arr[@]}"` as unbound.
+  Write `${1+"$@"}` and `${arr[@]+"${arr[@]}"}` wherever the list can be empty.
+  Inside `$(...)` the error does not stop the run, so it surfaces as corrupt
+  output with exit 0 rather than as a failure.
+- The bash 4.0 CI job runs spot checks, not the suite. Run `bats tests/` under a
+  local bash 4.0 as well before calling a change done.
+
 ## Verification
 
 Nothing is done until these pass:
@@ -68,4 +77,4 @@ A notation change must not alter a single executable line. The gate that proves 
 diff <(git show HEAD:<file> | rg -v '^\s*(#|$)') <(rg -v '^\s*(#|$)' <file>)
 ```
 
-Empty output means comments only. CI runs the same checks on Linux, macOS, and bash 4.0 under busybox.
+Empty output means comments only. CI runs the suite on Linux and macOS, and spot checks under bash 4.0 with busybox.

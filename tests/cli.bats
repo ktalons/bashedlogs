@@ -27,6 +27,8 @@ load test_helper
 @test "no arguments is a usage error (exit 1)" {
   run "$BL"
   [ "$status" -eq 1 ]
+  # bash 4.0 used to exit 1 here too, on "$@: unbound variable" and no usage.
+  [[ "$output" == *"Usage:"* ]]
 }
 
 @test "unknown option is a usage error (exit 1)" {

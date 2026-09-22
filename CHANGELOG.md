@@ -43,6 +43,14 @@ and listed under Known issues.
   The analyzers now run under `LC_ALL=C` and treat log text as bytes. The
   caller's locale still decides which bytes the report shows as C1 controls.
 
+### Fixed
+
+- Under bash 4.0, `--iocs -o json` wrote invalid JSON (`"domains":,`)
+  whenever an IOC category was empty, and still exited 0. Run with no
+  arguments, it printed `$@: unbound variable` instead of the usage text.
+  bash 4.0 treats an empty `"$@"` as unbound under `set -u`, and the bash 5
+  that most CI jobs run does not. The bash 4.0 CI job now checks both.
+
 ### Changed
 
 - Entries tied on count in a top-N list are now ordered by byte value under
@@ -63,10 +71,6 @@ and listed under Known issues.
   reads correctly, so it is not fixed yet. Until it is, check a brute-force
   source against sshd's own `from <ip> port <n>` text in the raw log before
   acting on it.
-- Under bash 4.0, `--iocs -o json` writes invalid JSON (`"domains":,`) when
-  any IOC category is empty, and still exits 0. Pretty output, NDJSON, and
-  `-o json` without `--iocs` work on 4.0, and the bash 5 that CI tests on is
-  not affected.
 
 ## v2.0.0
 

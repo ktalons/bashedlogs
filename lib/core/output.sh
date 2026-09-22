@@ -91,9 +91,13 @@ metrics_to_json() {
 }
 
 # json_str_array [values...]: JSON array of defanged, escaped strings.
+#
+# NOTE: under set -u, bash 4.0 treats "$@" with no arguments as unbound. The
+# error fired inside the caller's $(...), so an empty IOC list left `"ips":,`
+# in the JSON and the run still exited 0. ${1+"$@"} expands to nothing instead.
 json_str_array() {
   local out="" v
-  for v in "$@"; do
+  for v in ${1+"$@"}; do
     if [ -n "$out" ]; then out="$out,"; fi
     out="$out\"$(json_escape "$(maybe_defang "$v")")\""
   done

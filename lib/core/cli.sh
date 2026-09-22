@@ -176,7 +176,7 @@ prepare_input() {
 # *--- Entry Point ---*
 
 main() {
-  parse_args "$@"
+  parse_args ${1+"$@"}
   init_colors
   prepare_input
 

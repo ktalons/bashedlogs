@@ -82,6 +82,13 @@ jobs:
             rc=0; ./dist/bashedlogs --fail-level high tests/fixtures/generic/mixed.log >/dev/null || rc=$?
             test "$rc" -eq 3
             ./dist/bashedlogs --fail-level low tests/fixtures/generic/clean.log >/dev/null
+            for bl in ./bin/bashedlogs ./dist/bashedlogs; do
+              out=$("$bl" --iocs -o json tests/fixtures/auth/normal.log)
+              case $out in *"\"domains\":[],\"urls\":[],\"hashes\":{\"md5\":[],"*) ;; *) echo "$bl: empty IOC list not []"; exit 1 ;; esac
+              rc=0; out=$("$bl" 2>&1) || rc=$?
+              test "$rc" -eq 1
+              case $out in *"Usage:"*) ;; *) echo "$bl: no usage without arguments"; exit 1 ;; esac
+            done
           '
       - name: Control bytes escaped in bounded time under bash 4.0 / busybox
         # bash 4.0 runs ${v//x/y} in superlinear time, and busybox od/awk carry
