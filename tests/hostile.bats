@@ -504,3 +504,31 @@ MOCK
   [[ "$output" != *$'\033'* ]]
   [[ "$output" == *"top_paths"*'/1\x1b[A\x1b[A'* ]]
 }
+
+@test "stderr shows control bytes in an unreadable file name as visible escapes" {
+  run "$BL" "$BATS_TEST_TMPDIR/gone"$'\033[2J\033]0;x\007'".log"
+  [ "$status" -eq 2 ]
+  [[ "$output" != *$'\033'* ]]
+  [[ "$output" != *$'\007'* ]]
+  [[ "$output" == *"cannot read"*'gone\x1b[2J\x1b]0;x\x07.log'* ]]
+}
+
+@test "stderr shows control bytes in a file name as visible escapes on a --strict failure" {
+  local f="$BATS_TEST_TMPDIR/mixed"$'\033[2J\033]0;x\007'".log"
+  cp "$FIXTURES/generic/mixed.log" "$f"
+  run "$BL" --strict "$f"
+  [ "$status" -eq 2 ]
+  [[ "$output" != *$'\033'* ]]
+  [[ "$output" != *$'\007'* ]]
+  [[ "$output" == *"--strict"* ]]
+  [[ "$output" == *'mixed\x1b[2J\x1b]0;x\x07.log'* ]]
+}
+
+@test "stderr shows control bytes in an unknown option as visible escapes" {
+  # A file name that starts with a dash is parsed as an option and quoted.
+  run "$BL" $'-\033[2J\033]0;x\007.log'
+  [ "$status" -eq 1 ]
+  [[ "$output" != *$'\033'* ]]
+  [[ "$output" != *$'\007'* ]]
+  [[ "$output" == *"unknown option"*'-\x1b[2J\x1b]0;x\x07.log'* ]]
+}

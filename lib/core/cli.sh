@@ -61,8 +61,12 @@ Exit codes: 0 ok, 1 error, 2 unreadable input or strict-detection failure,
 EOF
 }
 
+# SECURITY: stderr goes to the same terminal as the report, and a usage
+# message can quote an argument, which may be a hostile file name. Each
+# message is shown through pretty_safe, as report values are.
 die_usage() {
-  echo "bashedlogs: $1" >&2
+  pretty_safe "$1" 2>/dev/null
+  echo "bashedlogs: $PRETTY_SAFE" >&2
   echo "Try 'bashedlogs --help'." >&2
   exit 1
 }
@@ -163,7 +167,8 @@ prepare_input() {
     DISPLAY_FILE=$LOGFILE
   fi
   if [ ! -f "$LOGFILE" ] || [ ! -r "$LOGFILE" ]; then
-    echo "bashedlogs: cannot read '$DISPLAY_FILE'" >&2
+    pretty_safe "$DISPLAY_FILE" 2>/dev/null
+    echo "bashedlogs: cannot read '$PRETTY_SAFE'" >&2
     exit 2
   fi
 }
@@ -184,7 +189,8 @@ main() {
   else
     if fmt=$(detect_format "$LOGFILE"); then detected_ok=1; fi
     if [ "$detected_ok" -eq 0 ] && [ "$STRICT" -eq 1 ]; then
-      echo "bashedlogs: could not confidently detect the format of '$DISPLAY_FILE' (--strict)" >&2
+      pretty_safe "$DISPLAY_FILE" 2>/dev/null
+      echo "bashedlogs: could not confidently detect the format of '$PRETTY_SAFE' (--strict)" >&2
       exit 2
     fi
   fi
