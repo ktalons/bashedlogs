@@ -37,4 +37,9 @@ unset _lib
 
 # *--- Entry Point ---*
 
+# SECURITY: log text is handled as bytes. In a multibyte locale BSD awk stops
+# at the first byte sequence that is invalid there and prints that raw line
+# to stderr, and bash expansion can add a byte to one. lib/ has already read
+# the caller's locale into PRETTY_LOCALE, so the run itself goes under C.
+export LC_ALL=C
 main "$@"

@@ -532,3 +532,55 @@ MOCK
   [[ "$output" != *$'\007'* ]]
   [[ "$output" == *"unknown option"*'-\x1b[2J\x1b]0;x\x07.log'* ]]
 }
+
+@test "raw C1 bytes in a log show as visible escapes under an EUC locale" {
+  local LC_ALL=C loc path=$'/\244\242/a\233b\216\261c'
+  loc=$(find_locale ja_JP.eucJP)
+  if [ -z "$loc" ]; then
+    skip "ja_JP.eucJP is not installed (locale -a does not list it)"
+  fi
+  # EUC keeps \200-\237 for C1 controls, so raw CSI (\233) is shown as text.
+  # SS2 (\216) is in that range but opens a half-width kana, here \216\261,
+  # so it stays, as does the hiragana \244\242.
+  write_legacy_web "$path"
+  run env LC_ALL="$loc" "$BL" --no-color "$BATS_TEST_TMPDIR/legacy-web.log"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *$'\233'* ]]
+  [[ "$output" == *"top_paths"*$'/\244\242/a''\x9b'$'b\216\261c (2)'* ]]
+}
+
+@test "a stray EUC lead byte reaches the report unchanged" {
+  local LC_ALL=C loc
+  loc=$(find_locale ja_JP.eucJP)
+  if [ -z "$loc" ]; then
+    skip "ja_JP.eucJP is not installed (locale -a does not list it)"
+  fi
+  # SS3 (\217) opens a three-byte character. Followed by ASCII instead, it
+  # stopped BSD awk under EUC, and bash expansion there added a \001 after it.
+  write_legacy_web $'/a\217b'
+  run env LC_ALL="$loc" "$BL" --no-color "$BATS_TEST_TMPDIR/legacy-web.log"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *$'\001'* ]]
+  [[ "$output" == *"top_paths"*$'/a\217b (2)'* ]]
+}
+
+@test "an invalid UTF-8 byte next to a control byte neither stops the run nor leaks" {
+  local LC_ALL=C l loc=""
+  for l in en_US.UTF-8 en_US.utf8 C.UTF-8 C.utf8; do
+    loc=$(find_locale "$l")
+    if [ -n "$loc" ]; then break; fi
+  done
+  if [ -z "$loc" ]; then
+    skip "no UTF-8 locale is installed (locale -a lists none)"
+  fi
+  # SECURITY: BSD awk under a UTF-8 locale stopped at \377 with "illegal byte
+  # sequence" and printed the raw line, ESC included, to stderr.
+  write_legacy_web $'/a\377\033[2Jb'
+  run env LC_ALL="$loc" "$BL" --no-color "$BATS_TEST_TMPDIR/legacy-web.log"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *$'\033'* ]]
+  [[ "$output" == *"top_paths"*$'/a\377''\x1b[2Jb (2)'* ]]
+  run env LC_ALL="$loc" "$BL" -o json "$BATS_TEST_TMPDIR/legacy-web.log"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *$'\033'* ]]
+}

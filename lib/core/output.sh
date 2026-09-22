@@ -205,8 +205,9 @@ emit_ndjson() {
 # rewrite findings already on screen, so each such value is printed with its
 # control characters shown as visible \xHH text. JSON output is not affected.
 
-# The locale the report is shown in. Read at load time: pretty_safe shadows
-# LC_ALL, so pretty_ctrl_init cannot see the caller's value itself.
+# The locale the report is shown in. Read at load time: bin/bashedlogs sets
+# LC_ALL=C for the run and pretty_safe shadows it again, so pretty_ctrl_init
+# cannot see the caller's value itself.
 PRETTY_LOCALE=${LC_ALL:-${LC_CTYPE:-${LANG:-}}}
 
 # Set on first use. PRETTY_CTRL_SET holds C0 (\001-\037) and DEL, and then,
