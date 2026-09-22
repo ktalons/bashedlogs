@@ -34,28 +34,46 @@ web_access_analyze() {
   local raw kind a b
 
   # FS='"' gives: $1 = 'ip - user [ts] ', $2 = request, $3 = ' status size '
+  # SECURITY: Apache and nginx escape=json log a quote inside a field as \",
+  # so a line holding a backslash is re-split on unescaped quotes only.
   raw=$(awk -F'"' "$AWK_IP_LIB"'
+    # Fill f[1..3] as FS="\"" would, but step over \" escapes. Masking \\ first
+    # lets \\" still close a field; the mask keeps offsets, so text comes from line.
+    function wa_fields(line, f,    m, q, n, i, pos) {
+      m = line
+      gsub(/\\\\/, "__", m)
+      gsub(/\\"/, "__", m)
+      n = split(m, q, "\"")
+      pos = 1
+      for (i = 1; i <= 3; i++) {
+        f[i] = (i <= n) ? substr(line, pos, length(q[i])) : ""
+        pos += length(q[i]) + 1
+      }
+    }
     {
       total++
-      n = split($1, pre, " ")
+      f[1] = $1; f[2] = $2; f[3] = $3
+      if (index($0, "\\") > 0) wa_fields($0, f)
+
+      n = split(f[1], pre, " ")
       cand = (n >= 1) ? bl_clean_ip(pre[1]) : ""
       ip = bl_valid_ip(cand) ? cand : ""
       if (ip != "") ips[ip]++
-      if (first_ts == "" && match($1, /\[[^]]+\]/)) first_ts = substr($1, RSTART + 1, RLENGTH - 2)
-      if (match($1, /\[[^]]+\]/)) last_ts = substr($1, RSTART + 1, RLENGTH - 2)
+      if (first_ts == "" && match(f[1], /\[[^]]+\]/)) first_ts = substr(f[1], RSTART + 1, RLENGTH - 2)
+      if (match(f[1], /\[[^]]+\]/)) last_ts = substr(f[1], RSTART + 1, RLENGTH - 2)
 
-      split($2, req, " ")
+      split(f[2], req, " ")
       path = req[2]
       if (path != "") paths[path]++
 
-      split($3, post, " ")
+      split(f[3], post, " ")
       status = post[1] + 0
       if (status >= 200 && status < 300) s2xx++
       else if (status >= 300 && status < 400) s3xx++
       else if (status >= 400 && status < 500) { s4xx++; if (status == 404 && ip != "") nf[ip]++ }
       else if (status >= 500) s5xx++
 
-      low = tolower($2)
+      low = tolower(f[2])
       if (low ~ /union[^a-z0-9]+select|union\+select|union%20select|information_schema|sleep\(|benchmark\(/) {
         sqli++; if (sqli_ex == "") sqli_ex = path
       }

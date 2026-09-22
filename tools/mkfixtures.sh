@@ -299,6 +299,44 @@ cat > "$FIX/regressions/wazuh-nested.json" <<'EOF'
 {"manager":{"name":"wazuh-mgr"},"decoder":{"name":"pam"},"timestamp":"2025-06-12T10:00:02.000-0700","agent":{"id":"002","name":"db-01"},"rule":{"level":12,"description":"user said \"hi\" then failed","id":"5716"},"data":{"srcip":"2001:db8::9"}}
 EOF
 
+# regressions/web-escaped-quote.log: Apache logs a quote inside the request as
+# \". Splitting on every quote cut the SQLi and XSS requests short, and read
+# the status from attacker text: the 404 scan counted as 200s, the 200s as 500s.
+cat > "$FIX/regressions/web-escaped-quote.log" <<'EOF'
+192.0.2.15 - - [10/Jun/2025:10:04:00 -0700] "GET /products.php?a=\"&id=1+union+select+password+from+users HTTP/1.1" 500 0 "-" "sqlmap/1.7"
+192.0.2.15 - - [10/Jun/2025:10:04:05 -0700] "GET /search?q=\"><script>alert(1)</script> HTTP/1.1" 200 0 "-" "Mozilla/5.0"
+198.51.100.23 - - [10/Jun/2025:10:04:10 -0700] "GET /blog?ref=\"500 HTTP/1.1" 200 8200 "-" "Mozilla/5.0"
+198.51.100.23 - - [10/Jun/2025:10:04:15 -0700] "GET /blog?ref=\"500 HTTP/1.1" 200 8200 "-" "Mozilla/5.0"
+203.0.113.99 - - [10/Jun/2025:10:05:00 -0700] "GET /admin/\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:05 -0700] "GET /backup.zip\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:10 -0700] "GET /old/\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:15 -0700] "GET /test.php\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:20 -0700] "GET /config.bak\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:25 -0700] "GET /db.sql\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:30 -0700] "GET /site.tar.gz\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:35 -0700] "GET /login.asp\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:40 -0700] "GET /server-status\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:45 -0700] "GET /cgi-bin/test.cgi\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:50 -0700] "GET /shell.php\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+203.0.113.99 - - [10/Jun/2025:10:05:55 -0700] "GET /upload.php\"200 HTTP/1.1" 404 0 "-" "python-requests/2.31"
+EOF
+
+# regressions/web-escaped-user.log: Apache escapes a bogus Basic-auth user the
+# same way, and that \" sits ahead of the request, so the SQLi and the 401 were
+# both read from the wrong field.
+cat > "$FIX/regressions/web-escaped-user.log" <<'EOF'
+192.0.2.60 - x\" [10/Jun/2025:10:07:00 -0700] "GET /p?id=1+union+select+pw HTTP/1.1" 401 381 "-" "curl/8.0"
+EOF
+
+# regressions/web-escaped-fields.log: escapes that must NOT move a boundary. An
+# escaped backslash right before the closing quote still ends the request, and
+# a \" in the referer or user agent comes after the status.
+cat > "$FIX/regressions/web-escaped-fields.log" <<'EOF'
+203.0.113.40 - - [10/Jun/2025:10:06:00 -0700] "GET /a\\" 404 0 "-" "-"
+203.0.113.40 - - [10/Jun/2025:10:06:05 -0700] "GET /b\\\\" 404 0 "-" "-"
+203.0.113.41 - - [10/Jun/2025:10:06:10 -0700] "GET /r HTTP/1.1" 301 0 "http://example.com/\"200" "Mozilla/5.0 \"500\""
+EOF
+
 # *--- Hostile Input Fixtures ---*
 
 mkdir -p "$FIX/hostile"

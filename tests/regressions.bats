@@ -140,6 +140,69 @@ setup() {
   [ "$output" = "tab here and more (1)" ]
 }
 
+# *--- Access Log Escaped Quotes ---*
+# NOTE: Apache logs a quote in a field as \"; splitting on every quote hid SQLi
+# and XSS and read the status from attacker text. The last three tests pass
+# before the fix too: they pin parsing the fix must not move.
+
+@test "an escaped quote in the request does not hide SQL injection" {
+  run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/web-escaped-quote.log\" | jq -r '.format, [.findings[]|select(.category==\"injection-sqli\")][0].data.example'"
+  [ "${lines[0]}" = "web_access" ]
+  [ "${lines[1]}" = '/products.php?a=\"&id=1+union+select+password+from+users' ]
+}
+
+@test "an escaped quote in the request does not hide an XSS probe" {
+  run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/web-escaped-quote.log\" | jq -r '[.findings[]|select(.category==\"injection-xss\")][0].data.example'"
+  [ "$output" = '/search?q=\"><script>alert(1)</script>' ]
+}
+
+@test "an escaped quote cannot spoof the status or hide a 404 scan" {
+  run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/web-escaped-quote.log\" | jq -r '.metrics.status_2xx, .metrics.status_4xx, .metrics.status_5xx'"
+  [ "${lines[0]}" = "3" ]
+  [ "${lines[1]}" = "12" ]
+  [ "${lines[2]}" = "1" ]
+  run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/web-escaped-quote.log\" | jq -r '[.findings[]|select(.category==\"scanning\")][0].data | .ip, .status_404'"
+  [ "${lines[0]}" = "203.0.113.99" ]
+  [ "${lines[1]}" = "12" ]
+}
+
+@test "an escaped quote in the user field does not hide SQL injection" {
+  run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/web-escaped-user.log\" | jq -r '.format, .metrics.status_4xx, [.findings[]|select(.category==\"injection-sqli\")][0].data.example'"
+  [ "${lines[0]}" = "web_access" ]
+  [ "${lines[1]}" = "1" ]
+  [ "${lines[2]}" = "/p?id=1+union+select+pw" ]
+}
+
+@test "an escaped backslash before the closing quote still ends the request" {
+  run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/web-escaped-fields.log\" | jq -r '.metrics.status_4xx, .metrics.top_paths'"
+  [ "${lines[0]}" = "2" ]
+  [ "${lines[1]}" = '/a\\ (1), /b\\\\ (1), /r (1)' ]
+}
+
+@test "an escaped quote in the referer or user agent does not move the status" {
+  run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/web-escaped-fields.log\" | jq -r '.metrics.status_2xx, .metrics.status_3xx, .metrics.status_5xx'"
+  [ "${lines[0]}" = "0" ]
+  [ "${lines[1]}" = "1" ]
+  [ "${lines[2]}" = "0" ]
+}
+
+@test "a CRLF log with the status last still buckets every status" {
+  # Built here, not in mkfixtures: a committed CRLF file risks line-ending
+  # normalization. The \\ lines take the escape-aware split, the rest do not.
+  {
+    for i in 1 2 3 4 5 6; do
+      printf '203.0.113.99 - - [10/Jun/2025:10:05:%02d -0700] "GET /probe%d HTTP/1.1" 404\r\n' "$i" "$i"
+      printf '203.0.113.99 - - [10/Jun/2025:10:05:%02d -0700] "GET /scripts/..\\\\..\\\\cmd%d.exe HTTP/1.1" 404\r\n' "$((i + 6))" "$i"
+    done
+    printf '198.51.100.23 - - [10/Jun/2025:10:06:00 -0700] "GET / HTTP/1.1" 200\r\n'
+  } > "$BATS_TEST_TMPDIR/crlf.log"
+  [ "$(grep -c $'\r$' "$BATS_TEST_TMPDIR/crlf.log")" = "13" ]
+  run bash -c "\"$BL\" -o json \"$BATS_TEST_TMPDIR/crlf.log\" | jq -r '.metrics.status_2xx, .metrics.status_4xx, [.findings[]|select(.category==\"scanning\")][0].data.status_404'"
+  [ "${lines[0]}" = "1" ]
+  [ "${lines[1]}" = "12" ]
+  [ "${lines[2]}" = "12" ]
+}
+
 # *--- Confirmed Non-Defects ---*
 # NOTE: pinned so these behaviors are not "fixed" by accident.
 
