@@ -38,34 +38,116 @@ auth_ssh_detect() {
 #   - `Invalid user` preambles are enumeration signal, not separate failures.
 #   - `Failed publickey`/`Failed none` are routine negotiation noise, counted
 #     as probes rather than credential attempts.
+#
+# SECURITY: sshd logs the username a client sends, and the text of a client
+# disconnect, verbatim and with spaces. A username of `x from 198.51.100.7`
+# used to put that address on the brute force, and a later real login from it
+# read as a possible compromise. Failures, accepts, and their addresses are
+# now read only from sshd's own message, which starts after the program tag
+# (or the journald MESSAGE key) and must start with the event's words:
+#   - A failure takes the address after the LAST `from`. The username comes
+#     before sshd's own `from <ip> port <n>`, so it cannot follow it.
+#   - An accept takes the FIRST `from`. A certificate key ID comes after it.
+#   - PAM takes `rhost=` only, which precedes `user=`.
+#   - A line whose program tag does not name ssh is not read as sshd's.
+# With no tag (journalctl -o cat, RFC 5424, Windows), the message starts at the
+# earliest word sshd opens a message with. Every message that carries client
+# text opens with one of those words, so client text always comes after it.
 auth_ssh_analyze() {
   local file=$1
   local assume_year="${BASHEDLOGS_ASSUME_YEAR:-$(date +%Y)}"
   local raw events kind a b c
 
   # Pass 1: classify events, extract validated IPs/users, stamp epochs.
-  raw=$(awk -v YEAR="$assume_year" "$AWK_IP_LIB$AWK_TIME_LIB"'
-    # IP after a "from" token, or rhost=IP. Handles IPv4 and IPv6.
-    function line_ip(   i, tok) {
-      for (i = 1; i < NF; i++) {
-        if ($i == "from") {
-          tok = bl_clean_ip($(i + 1))
-          if (bl_valid_ip(tok)) return tok
+  # NOTE: an RFC 5424 message may start with a UTF-8 BOM, which glues it to
+  # the first word. It is passed in as bytes; awk %c is not portable past 127.
+  raw=$(awk -v YEAR="$assume_year" -v BOM=$'\357\273\277' "$AWK_IP_LIB$AWK_TIME_LIB"'
+    BEGIN {
+      # Words sshd opens a message with, after a boundary. The last two catch
+      # other message shapes that carry client text: foo_bar: and sftp verbs.
+      OPENER = "([ \t\"=:]|\\[)(Failed |Accepted |Invalid user |Illegal user " \
+        "|Postponed |Partial |pam_[a-z_]+\\(|PAM [0-9]|Connection |Disconnected " \
+        "|Disconnecting |Received |Did not receive|User |error: |fatal: " \
+        "|banner exchange|Bad protocol|Protocol major|Unable to negotiate" \
+        "|reverse mapping|Address |Nasty PTR|refused connect|message repeated " \
+        "|Starting session|Close session|Timeout before|drop connection" \
+        "|subsystem request|debug[0-9]: |[a-z][a-z0-9]*_[a-z0-9_]*: " \
+        "|[a-z][a-z-]* ((name|old) )?\")"
+      # A program tag: sshd[123]:, sshd:, or the macOS compact sshd[123:456].
+      # Only the [pid] forms are unambiguous on their own; a bare name: needs
+      # whitespace after it, or a timestamp such as 2025-06-01T10: reads as one.
+      TAG = "[ \t][A-Za-z0-9_./-]+(\\[[0-9]+\\]:|(\\[[0-9]+:[0-9]+\\]|:)[ \t])"
+    }
+    # A JSON string value up to its closing quote, stepping over \\ and \"
+    # the way web_access does.
+    function json_value(s,    m, k) {
+      m = s
+      gsub(/\\\\/, "__", m)
+      gsub(/\\"/, "__", m)
+      k = index(m, "\"")
+      return (k > 0) ? substr(s, 1, k - 1) : s
+    }
+    # Solaris message IDs and rsyslog repeat wrappers sit before the event.
+    function strip_prefix(b) {
+      sub(/^[ \t]+/, "", b)
+      sub(/^\[ID [0-9]+ [a-z0-9]+\.[a-z]+\] /, "", b)
+      sub(/^message repeated [0-9]+ times: \[ /, "", b)
+      return b
+    }
+    # sshd message text of the current line, or "" when it is not sshd.
+    # Strings are padded with a space so a boundary never needs ^ or $.
+    function msg_body(    s, k, p, pre, e) {
+      s = $0
+      if (s ~ /^[ \t]*MESSAGE=/) {
+        sub(/^[ \t]*MESSAGE=/, "", s)
+        return strip_prefix(s)
+      }
+      if (s ~ /^[ \t]*"MESSAGE" : "/) {
+        sub(/^[ \t]*"MESSAGE" : "/, "", s)
+        return strip_prefix(json_value(s))
+      }
+      # Only on a JSON line: sshd writes a username quote as a raw quote.
+      if (s ~ /^[ \t]*\{/ && match(s, /[{,]"MESSAGE":"/))
+        return strip_prefix(json_value(substr(s, RSTART + RLENGTH)))
+      if (s ~ /^<[0-9]+>[0-9]+ / && $4 != "-" && tolower($4) !~ /ssh/) return ""
+      if (BOM != "" && (k = index(s, BOM)) > 0)
+        s = substr(s, 1, k - 1) " " substr(s, k + length(BOM))
+      if (!match(" " s, OPENER)) return ""
+      p = RSTART
+      pre = substr(s, 1, p - 1)
+      if (match(" " pre " ", TAG)) {
+        if (tolower(substr(" " pre " ", RSTART, RLENGTH)) !~ /ssh/) return ""
+        e = RSTART + RLENGTH - 1
+        return strip_prefix(substr(s, (e < p) ? e : p))
+      }
+      return strip_prefix(substr(s, p))
+    }
+    # Address after the last (or first) "from" token of the message.
+    function from_ip(last,    i, tok) {
+      tok = ""
+      for (i = 1; i < bn; i++) {
+        if (bt[i] == "from") {
+          tok = bt[i + 1]
+          if (!last) break
         }
       }
-      for (i = 1; i <= NF; i++) {
-        if ($i ~ /^rhost=/) {
-          tok = bl_clean_ip(substr($i, 7))
-          if (bl_valid_ip(tok)) return tok
+      tok = bl_clean_ip(tok)
+      return bl_valid_ip(tok) ? tok : ""
+    }
+    function rhost_ip(    i, tok) {
+      for (i = 1; i <= bn; i++) {
+        if (bt[i] ~ /^rhost=/) {
+          tok = bl_clean_ip(substr(bt[i], 7))
+          return bl_valid_ip(tok) ? tok : ""
         }
       }
       return ""
     }
-    function line_user(   i) {
-      for (i = 1; i < NF; i++) {
-        if ($i == "for" && $(i + 1) == "invalid" && $(i + 2) == "user") return $(i + 3)
-        if ($i == "for" && $(i + 1) != "invalid") return $(i + 1)
-        if ($i == "user" && $(i - 1) == "Invalid") return $(i + 1)
+    function body_user(    i) {
+      for (i = 1; i < bn; i++) {
+        if (bt[i] == "for" && bt[i + 1] == "invalid" && bt[i + 2] == "user") return bt[i + 3]
+        if (bt[i] == "for" && bt[i + 1] != "invalid") return bt[i + 1]
+        if (bt[i] == "user" && bt[i - 1] == "Invalid") return bt[i + 1]
       }
       return ""
     }
@@ -89,16 +171,18 @@ auth_ssh_analyze() {
       total++
       if (first_ts == "") first_ts = $1 " " $2 " " $3
       last_ts = $1 " " $2 " " $3
-      ip = line_ip()
       e = line_epoch()
+      body = msg_body()
+      bn = split(body, bt, " ")
 
       # sshd credential failures: authoritative, one line per real attempt.
-      if ($0 ~ /Failed (password|keyboard-interactive)/) {
+      if (body ~ /^Failed (password|keyboard-interactive)/) {
         sshd_fail++
-        if ($0 ~ /for root |for invalid user root /) sshd_root++
+        if (body ~ /^Failed [^ ]+ for (invalid user )?root /) sshd_root++
+        ip = from_ip(1)
         if (ip != "") {
           sshd_fail_ip[ip]++
-          user = line_user()
+          user = body_user()
           if (user != "" && user != "invalid") sshd_fail_user[user]++
           if (e > 0) printf "EV\tsshd\t%d\tfail\t%s\n", e, ip
         }
@@ -106,27 +190,29 @@ auth_ssh_analyze() {
       }
       # PAM view of the same attempt. Tracked separately and only promoted to
       # the failure stream when the log has no sshd failure lines at all.
-      if ($0 ~ /pam_unix\(sshd:auth\): authentication failure/) {
+      if (body ~ /^pam_unix\(sshd:auth\): authentication failure/) {
         pam_fail++
-        if ($0 ~ /user=root($| )/) pam_root++
+        if (body ~ /user=root($| )/) pam_root++
+        ip = rhost_ip()
         if (ip != "") {
           pam_fail_ip[ip]++
-          user = line_user()
+          user = body_user()
           if (user != "" && user != "invalid") pam_fail_user[user]++
           if (e > 0) printf "EV\tpam\t%d\tfail\t%s\n", e, ip
         }
         next
       }
-      if ($0 ~ /Invalid user /) {
+      if (body ~ /^Invalid user /) {
         invalid++
-        user = line_user()
+        user = body_user()
         if (user != "") enum_user[user] = 1
         next
       }
-      if ($0 ~ /Accepted (password|publickey|keyboard-interactive)/) {
+      if (body ~ /^Accepted (password|publickey|keyboard-interactive)/) {
         accepted++
-        user = line_user()
-        if ($0 ~ /Accepted password for root /) root_pw_login++
+        user = body_user()
+        if (body ~ /^Accepted password for root /) root_pw_login++
+        ip = from_ip(0)
         if (ip != "" && e > 0) printf "EV\tboth\t%d\taccept\t%s\t%s\n", e, ip, user
         next
       }

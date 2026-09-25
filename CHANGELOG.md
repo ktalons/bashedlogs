@@ -4,11 +4,23 @@
 
 A security release. A Claude Security review of v2.0.0 found five ways a
 crafted log could mislead the analyst reading the report. This release fixes
-four of them, plus two more found while fixing those. The fifth is still open
-and listed under Known issues.
+all five, plus two more found while fixing those.
 
 ### Fixed in security review
 
+- sshd logs the username a client sends, and the text of a client disconnect,
+  verbatim and with spaces. The analyzer read the source address from the first
+  `from` on the line, so an attempt with the username `x from 198.51.100.7` put
+  that address on the brute force, cleared the machine that was really
+  attacking, and turned a later legitimate login from the framed address into a
+  critical possible-compromise finding naming a real user. Addresses now come
+  from sshd's own message, which starts after the program tag: the last `from`
+  on a failure, the first on an accept, where a certificate key ID can follow,
+  and `rhost=` alone on a PAM line. A line whose program tag does not name ssh
+  is no longer read as sshd's, so another daemon logging client text cannot
+  forge one. Journald export, one-line and pretty JSON, RFC 5424 with a BOM,
+  Solaris message IDs, rsyslog repeat wrappers, and tagless
+  `journalctl -o cat` output all read the same event the same way.
 - Pretty output printed text from the log as it was: usernames, request paths,
   DNS names, program names, Wazuh rule descriptions, IOC URLs, and the file
   name. An escape sequence in a log line could erase or rewrite findings
@@ -42,6 +54,10 @@ and listed under Known issues.
   stderr. Under EUC, bash could also add a stray byte to text it passed along.
   The analyzers now run under `LC_ALL=C` and treat log text as bytes. The
   caller's locale still decides which bytes the report shows as C1 controls.
+- Reading the SSH source from sshd's own message also fixed a miscount on
+  journald JSON exports, where the closing quote is glued to the last field. A
+  PAM line ending `user=root"` was not counted as an attempt on root, so a
+  journald export of a root brute force reported no root attempts at all.
 
 ### Fixed
 
@@ -59,18 +75,7 @@ and listed under Known issues.
 - Source files follow the code notation standard: a header on every file,
   section headings, and `NOTE:`, `WARN:`, and `SECURITY:` markers. Comments
   only. No executable line changed.
-- 140 bats tests, up from 106.
-
-### Known issues
-
-- The SSH analyzer takes the source IP from the first `from` in a line, and
-  sshd logs the client's username verbatim, spaces included. An attacker who
-  tries the username `x from 198.51.100.7` gets that address blamed for the
-  brute force, and a later real login from it is flagged as a possible
-  compromise. Both attempted fixes broke other sshd log shapes the analyzer
-  reads correctly, so it is not fixed yet. Until it is, check a brute-force
-  source against sshd's own `from <ip> port <n>` text in the raw log before
-  acting on it.
+- 146 bats tests, up from 106.
 
 ## v2.0.0
 

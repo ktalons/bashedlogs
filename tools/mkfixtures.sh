@@ -277,6 +277,44 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
     "$i" "$i" "$i" >> "$FIX/regressions/ipv6-brute.log"
 done
 
+# regressions/ssh-framed-user.log: sshd logs the username a client sends, and
+# the text of a client disconnect, verbatim and with spaces. Reading the first
+# `from` on the line blamed the whole brute force on 198.51.100.7, which never
+# connected, and cleared 203.0.113.66, which did. The address must come from
+# sshd's own `from <ip> port <n>`: the LAST one on a failure, the FIRST on an
+# accept, where a certificate key ID follows. The innocent address logs in at
+# 10:10 and must not read as a compromise.
+: > "$FIX/regressions/ssh-framed-user.log"
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  printf 'Jun  1 10:00:%02d h sshd[2%02d]: Invalid user x from 198.51.100.7 from 203.0.113.66 port 4%04d\n' \
+    "$i" "$i" "$i" >> "$FIX/regressions/ssh-framed-user.log"
+  printf 'Jun  1 10:00:%02d h sshd[2%02d]: Failed password for invalid user x from 198.51.100.7 from 203.0.113.66 port 4%04d ssh2\n' \
+    "$i" "$i" "$i" >> "$FIX/regressions/ssh-framed-user.log"
+done
+cat >> "$FIX/regressions/ssh-framed-user.log" <<'EOF'
+Jun  1 10:00:30 h sshd[220]: Connection closed by authenticating user x from 198.51.100.7 203.0.113.66 port 40013 [preauth]
+Jun  1 10:00:31 h sshd[221]: Received disconnect from 203.0.113.66 port 40014:11: disconnected by user from 198.51.100.7 [preauth]
+Jun  1 10:00:40 h sshd[230]: Accepted publickey for deploy from 203.0.113.66 port 40015 ssh2: ED25519-CERT SHA256:AAAA ID "x from 198.51.100.7" (serial 1) CA ED25519 SHA256:BBBB
+Jun  1 10:10:00 h sshd[300]: Accepted password for alice from 198.51.100.7 port 50001 ssh2
+EOF
+
+# regressions/ssh-framed-pam.log: a PAM line puts `user=` last, so a username
+# carrying ` from <ip>` framed an address there too. PAM reads `rhost=` only.
+cat > "$FIX/regressions/ssh-framed-pam.log" <<'EOF'
+Jun  1 11:00:00 h sshd[400]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.77 user=x from 198.51.100.7
+Jun  1 11:00:02 h sshd[401]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.77 user=x from 198.51.100.7
+Jun  1 11:00:04 h sshd[402]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.77 user=x from 198.51.100.7
+EOF
+
+# regressions/ssh-framed-tag.log: any daemon that logs client text can carry a
+# forged `sshd[1]:` tag inside its own message. The program tag decides, and the
+# first tag on the line is the real one, whether or not a space follows it.
+cat > "$FIX/regressions/ssh-framed-tag.log" <<'EOF'
+Jun  1 12:00:00 h dovecot[4000]: auth: pam(x sshd[1]: Failed password for root from 198.51.100.7 port 22 ssh2,203.0.113.99): unknown user
+Jun  1 12:00:01 h dovecot[4000]:auth: pam(x sshd[1]: Failed password for root from 198.51.100.7 port 22 ssh2,203.0.113.99): unknown user
+Jun  1 12:00:02 h sshd[500]: Failed password for root from 203.0.113.77 port 40001 ssh2
+EOF
+
 # regressions/firewall-icmp.log: ICMP has no ports, so the fields after src/dst
 # are type/code. Without a protocol gate those were reported as ports. Also
 # carries an IPv6 blocked source.

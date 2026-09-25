@@ -138,7 +138,13 @@ UTF-8 and C the C1 controls (U+0080 to U+009F) are shown as escapes too, and
 legitimate text in GBK, Shift-JIS, and the other multibyte encodings displays
 unchanged under its own locale.
 
-Known gaps are listed in the [CHANGELOG](CHANGELOG.md).
+A log also decides who gets blamed. sshd writes the username a client sends,
+and the text of a client disconnect, into the same line as the source address,
+so client text can name a machine that never connected. Source addresses are
+read from sshd's own message only, starting after the program tag, and a line
+whose program tag does not name ssh is not read as sshd's.
+
+What each release found and fixed is in the [CHANGELOG](CHANGELOG.md).
 
 ## Development
 

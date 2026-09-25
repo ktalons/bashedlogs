@@ -88,6 +88,14 @@ jobs:
               rc=0; out=$("$bl" 2>&1) || rc=$?
               test "$rc" -eq 1
               case $out in *"Usage:"*) ;; *) echo "$bl: no usage without arguments"; exit 1 ;; esac
+              # SSH source attribution is all awk string work, so busybox awk
+              # gets its own check: no client-supplied address in the report,
+              # and the real source on both the burst and the forged tag.
+              out=$("$bl" -o json --bf-threshold 5 --bf-window 300 tests/fixtures/regressions/ssh-framed-user.log)
+              case $out in *198.51.100.7*) echo "$bl: framed address in report"; exit 1 ;; esac
+              case $out in *"203.0.113.66 (12)"*) ;; *) echo "$bl: wrong brute-force source"; exit 1 ;; esac
+              out=$("$bl" -o json tests/fixtures/regressions/ssh-framed-tag.log)
+              case $out in *"\"top_attacking_ips\":\"203.0.113.77 (1)\""*) ;; *) echo "$bl: forged tag counted"; exit 1 ;; esac
             done
           '
       - name: Control bytes escaped in bounded time under bash 4.0 / busybox

@@ -203,6 +203,83 @@ setup() {
   [ "${lines[2]}" = "12" ]
 }
 
+# *--- SSH Source Attribution ---*
+# NOTE: a username of `x from 198.51.100.7` put that address on the brute force,
+# cleared the real source, and turned a later login from it into a critical
+# possible-compromise naming a real user.
+
+@test "a username carrying an address does not steal the brute force" {
+  run bash -c "\"$BL\" -o json --bf-threshold 5 --bf-window 300 \"$FIXTURES/regressions/ssh-framed-user.log\" | jq -r '.metrics.failed_auth, .metrics.top_attacking_ips, [.findings[]|select(.category==\"brute-force\")][0].data.ip'"
+  [ "${lines[0]}" = "12" ]
+  [ "${lines[1]}" = "203.0.113.66 (12)" ]
+  [ "${lines[2]}" = "203.0.113.66" ]
+}
+
+@test "an address only a client supplied appears nowhere in the report" {
+  run "$BL" --no-color --bf-threshold 5 --bf-window 300 "$FIXTURES/regressions/ssh-framed-user.log"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"198.51.100.7"* ]]
+  run "$BL" -o json --bf-threshold 5 --bf-window 300 "$FIXTURES/regressions/ssh-framed-user.log"
+  [[ "$output" != *"198.51.100.7"* ]]
+}
+
+@test "the compromise names the burst source, not the next login" {
+  # alice logs in from the framed address 10 minutes later, innocently. The
+  # accept that follows the burst is 'deploy', whose line carries a certificate
+  # key ID holding the framed address after sshd's own `from`.
+  run bash -c "\"$BL\" -o json --bf-threshold 5 --bf-window 300 \"$FIXTURES/regressions/ssh-framed-user.log\" | jq -r '[.findings[]|select(.category==\"possible-compromise\")]|length, .[0].data.ip, .[0].data.user'"
+  [ "${lines[0]}" = "1" ]
+  [ "${lines[1]}" = "203.0.113.66" ]
+  [ "${lines[2]}" = "deploy" ]
+}
+
+@test "PAM reads rhost, not an address inside user=" {
+  run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/ssh-framed-pam.log\" | jq -r '.metrics.failed_auth, .metrics.failure_source, .metrics.top_attacking_ips'"
+  [ "${lines[0]}" = "3" ]
+  [ "${lines[1]}" = "pam" ]
+  [ "${lines[2]}" = "203.0.113.77 (3)" ]
+}
+
+@test "another program's message cannot forge an sshd tag" {
+  run bash -c "\"$BL\" -o json \"$FIXTURES/regressions/ssh-framed-tag.log\" | jq -r '.metrics.failed_auth, .metrics.top_attacking_ips, [.findings[]|select(.category==\"root-attempts\")][0].data.count'"
+  [ "${lines[0]}" = "1" ]
+  [ "${lines[1]}" = "203.0.113.77 (1)" ]
+  [ "${lines[2]}" = "1" ]
+}
+
+@test "every log shape reads the same source from the same event" {
+  # One event, six times, in the shapes that move the message start: journald
+  # export, one-line json, RFC 5424 with a BOM, and `journalctl -o cat`, which
+  # has no tag at all. --format is explicit so this tests framing, not
+  # detection. The cat shape has no timestamp, so it has metrics, not findings.
+  msg='Failed password for invalid user x from 198.51.100.7 from 203.0.113.66 port 40001 ssh2'
+  bom=$(printf '\357\273\277')
+  : > "$BATS_TEST_TMPDIR/export.log"
+  : > "$BATS_TEST_TMPDIR/json.log"
+  : > "$BATS_TEST_TMPDIR/rfc5424.log"
+  : > "$BATS_TEST_TMPDIR/cat.log"
+  for i in 1 2 3 4 5 6; do
+    printf '__REALTIME_TIMESTAMP=174877200%d000000\nSYSLOG_IDENTIFIER=sshd\nMESSAGE=%s\n\n' \
+      "$i" "$msg" >> "$BATS_TEST_TMPDIR/export.log"
+    printf '{"__REALTIME_TIMESTAMP":"174877200%d000000","SYSLOG_IDENTIFIER":"sshd","MESSAGE":"%s"}\n' \
+      "$i" "$msg" >> "$BATS_TEST_TMPDIR/json.log"
+    printf '<38>1 2025-06-01T10:00:0%d.000000-07:00 h sshd 20%d - - %s%s\n' \
+      "$i" "$i" "$bom" "$msg" >> "$BATS_TEST_TMPDIR/rfc5424.log"
+    printf '%s\n' "$msg" >> "$BATS_TEST_TMPDIR/cat.log"
+  done
+  for shape in export json rfc5424 cat; do
+    run bash -c "\"$BL\" --format auth_ssh -o json \"$BATS_TEST_TMPDIR/$shape.log\" | jq -r '.metrics.failed_auth, .metrics.top_attacking_ips'"
+    [ "${lines[0]}" = "6" ] || {
+      echo "$shape: failed_auth ${lines[0]}" >&2
+      return 1
+    }
+    [ "${lines[1]}" = "203.0.113.66 (6)" ] || {
+      echo "$shape: top_attacking_ips ${lines[1]}" >&2
+      return 1
+    }
+  done
+}
+
 # *--- Confirmed Non-Defects ---*
 # NOTE: pinned so these behaviors are not "fixed" by accident.
 

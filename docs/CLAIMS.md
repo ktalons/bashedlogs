@@ -33,6 +33,7 @@ resume.
 | Sanitizing stays fast on bash 4.0 | CHANGELOG | `floor-bash4` CI step — 13,000 escape sequences through the tree and the artifact under bash 4.0 and busybox, each under 20s |
 | An invalid byte cannot stop a run | README, CHANGELOG | `tests/hostile.bats` — `\377` beside an escape sequence under a UTF-8 locale exits 0 in pretty and JSON with no raw ESC; EUC stray bytes pass through unchanged |
 | Escaped quotes in Apache logs do not hide payloads | CHANGELOG | `tests/regressions.bats` — SQLi and XSS after `\"`, spoofed status, user field, referer and user agent, CRLF |
+| The SSH source address comes from sshd, not from client text | README, CHANGELOG | `tests/regressions.bats` — a framed username, a PAM `user=`, a forged program tag, and one event read identically across four log shapes; the `floor-bash4` CI step repeats the check under busybox awk |
 | No analyzer aborts on mismatched input | — | `tests/robustness.bats` — all 8 analyzers over every fixture, plus empty and junk files |
 
 ## Audit note
@@ -52,5 +53,9 @@ but never asked whether it could reach the terminal raw, so every printing
 site passed escape sequences through while every test passed. The new tests
 assert on the bytes that reach the terminal, and a mutation run confirmed that
 removing the sanitizer from any printing site that carries log text fails at
-least one of them. One finding from that review, SSH source-IP framing, is
-still open. See the CHANGELOG's Known issues.
+least one of them. The last of the five, SSH source-IP framing, was fixed by
+reading the address only from sshd's own message, and that change was measured
+against two corpora before it shipped: 27 log shapes of the same genuine
+traffic, where every report stayed byte-identical except two journald cases
+that improved, and 510 files of framing vectors, where the old code blamed the
+address the client supplied in 425 and the new code in none.
