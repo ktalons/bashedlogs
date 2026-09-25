@@ -1,0 +1,7 @@
+Jun  1 13:00:01 h a1b2c3d4e5f6[1234]: Failed password for root from 203.0.113.88 port 40001 ssh2
+Jun  1 13:00:02 h a1b2c3d4e5f6[1234]: Failed password for root from 203.0.113.88 port 40002 ssh2
+Jun  1 13:00:03 h a1b2c3d4e5f6[1234]: Failed password for root from 203.0.113.88 port 40003 ssh2
+Jun  1 13:00:04 h a1b2c3d4e5f6[1234]: Failed password for root from 203.0.113.88 port 40004 ssh2
+Jun  1 13:00:05 h a1b2c3d4e5f6[1234]: Failed password for root from 203.0.113.88 port 40005 ssh2
+Jun  1 13:00:06 h a1b2c3d4e5f6[1234]: Failed password for root from 203.0.113.88 port 40006 ssh2
+Jun  1 13:00:07 h unix_chkpwd[9]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.88 user=root

@@ -16,11 +16,15 @@ all five, plus two more found while fixing those.
   critical possible-compromise finding naming a real user. Addresses now come
   from sshd's own message, which starts after the program tag: the last `from`
   on a failure, the first on an accept, where a certificate key ID can follow,
-  and `rhost=` alone on a PAM line. A line whose program tag does not name ssh
-  is no longer read as sshd's, so another daemon logging client text cannot
-  forge one. Journald export, one-line and pretty JSON, RFC 5424 with a BOM,
-  Solaris message IDs, rsyslog repeat wrappers, and tagless
-  `journalctl -o cat` output all read the same event the same way.
+  and `rhost=` alone on a PAM line. Event words quoted inside another program's
+  message are no longer read as sshd's, so a daemon that logs client text
+  cannot forge a burst by naming sshd in it. What decides is position rather
+  than the tag text, because relays, rsyslog templates and container runtimes
+  all rewrite the tag: requiring it to name ssh made a real brute force against
+  a containerized sshd report no failures at all. Journald export, one-line and
+  pretty JSON, RFC 5424 with a BOM, Solaris message IDs, rsyslog repeat
+  wrappers, and tagless `journalctl -o cat` output all read the same event the
+  same way.
 - Pretty output printed text from the log as it was: usernames, request paths,
   DNS names, program names, Wazuh rule descriptions, IOC URLs, and the file
   name. An escape sequence in a log line could erase or rewrite findings
@@ -75,7 +79,26 @@ all five, plus two more found while fixing those.
 - Source files follow the code notation standard: a header on every file,
   section headings, and `NOTE:`, `WARN:`, and `SECURITY:` markers. Comments
   only. No executable line changed.
-- 146 bats tests, up from 106.
+- 147 bats tests, up from 106.
+
+### Known issues
+
+- Attribution is trusted, not proved, so an app log mixed into an auth log can
+  still put an address on a burst. Reading by position means any program whose
+  message opens with sshd words is read as sshd, and an app that writes
+  attacker-controlled text at the start of its own message into the same file
+  can invent a burst against a machine that never connected. The reverse rule
+  hides a real burst behind a rewritten tag, which is worse for a detector, and
+  no text-only rule separates the two: once the tag is rewritten the line no
+  longer carries what wrote it. Three more cases are open. A journald
+  `MESSAGE=` record is read whatever its `SYSLOG_IDENTIFIER` says; a tag
+  holding a character the tag pattern does not cover is not seen as a tag at
+  all and the line falls through untested; and an accept takes the first
+  `from`, so an account that exists and whose name contains
+  ` from <ip> port <n>` re-attributes its own login. A cross-vendor audit of
+  this release found those three. Closing all four means the report has to
+  disclose how each line was attributed instead of assuming it, which is a
+  change for the next release rather than a patch to this one.
 
 ## v2.0.0
 

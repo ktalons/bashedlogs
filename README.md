@@ -141,8 +141,12 @@ unchanged under its own locale.
 A log also decides who gets blamed. sshd writes the username a client sends,
 and the text of a client disconnect, into the same line as the source address,
 so client text can name a machine that never connected. Source addresses are
-read from sshd's own message only, starting after the program tag, and a line
-whose program tag does not name ssh is not read as sshd's.
+read from sshd's own message only, and event words quoted inside another
+program's message are not read as sshd's. What decides is where the words sit,
+not what the program tag says, because relays and container runtimes rewrite
+the tag and a real attack must not disappear behind one. Attribution is
+therefore trusted rather than proved, and an app log mixed into an auth log can
+still put an address on a burst. The CHANGELOG lists the cases.
 
 What each release found and fixed is in the [CHANGELOG](CHANGELOG.md).
 

@@ -49,10 +49,29 @@ auth_ssh_detect() {
 #     before sshd's own `from <ip> port <n>`, so it cannot follow it.
 #   - An accept takes the FIRST `from`. A certificate key ID comes after it.
 #   - PAM takes `rhost=` only, which precedes `user=`.
-#   - A line whose program tag does not name ssh is not read as sshd's.
+#   - Event words quoted inside another message are not sshd's. The test is
+#     position, not the name: a tag with other text between it and the words
+#     means the words belong to that other program, while a tag that reads
+#     differently but is followed straight by the words is still sshd. Relays,
+#     rsyslog templates and container runtimes all rewrite the tag, and
+#     requiring it to name ssh made a containerized sshd report no failures.
 # With no tag (journalctl -o cat, RFC 5424, Windows), the message starts at the
 # earliest word sshd opens a message with. Every message that carries client
 # text opens with one of those words, so client text always comes after it.
+#
+# WARN: attribution is trusted, not proved. Reading by position rather than by
+# name means any program whose message opens with sshd words is read as sshd,
+# so an app that logs attacker text at the start of its own message, into the
+# same file, can invent a burst against a machine that never connected. The
+# reverse rule hides a real burst behind a rewritten tag, which is worse for a
+# detector, and no text-only rule separates the two: once the tag is rewritten
+# the line no longer carries what wrote it. Three more cases are open. A
+# journald `MESSAGE=` record is read whatever its SYSLOG_IDENTIFIER says; a tag
+# holding a character outside the TAG class is not seen as a tag at all, so the
+# line falls through untested; and an accept takes the first `from`, so an
+# account that exists and whose name contains ` from <ip> port <n>`
+# re-attributes its own login. Closing them needs the report to disclose how
+# each line was attributed instead of assuming it.
 auth_ssh_analyze() {
   local file=$1
   local assume_year="${BASHEDLOGS_ASSUME_YEAR:-$(date +%Y)}"
@@ -96,7 +115,7 @@ auth_ssh_analyze() {
     }
     # sshd message text of the current line, or "" when it is not sshd.
     # Strings are padded with a space so a boundary never needs ^ or $.
-    function msg_body(    s, k, p, pre, e) {
+    function msg_body(    s, k, p, pre, e, gap) {
       s = $0
       if (s ~ /^[ \t]*MESSAGE=/) {
         sub(/^[ \t]*MESSAGE=/, "", s)
@@ -116,8 +135,16 @@ auth_ssh_analyze() {
       p = RSTART
       pre = substr(s, 1, p - 1)
       if (match(" " pre " ", TAG)) {
-        if (tolower(substr(" " pre " ", RSTART, RLENGTH)) !~ /ssh/) return ""
         e = RSTART + RLENGTH - 1
+        # What sits between the tag and the first word of the event decides.
+        # Nothing there means the message came from sshd however the tag reads,
+        # because relays, container runtimes and rsyslog templates all rewrite
+        # the tag (the Docker syslog driver uses the container id). Other text
+        # there means the words are quoted inside some other message.
+        gap = (p > e) ? substr(s, e, p - e) : ""
+        if (tolower(substr(" " pre " ", RSTART, RLENGTH)) !~ /ssh/ &&
+            gap !~ /^[ \t]*(\[ID [0-9]+ [a-z0-9]+\.[a-z]+\] )?(message repeated [0-9]+ times: \[ )?$/)
+          return ""
         return strip_prefix(substr(s, (e < p) ? e : p))
       }
       return strip_prefix(substr(s, p))

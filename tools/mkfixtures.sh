@@ -315,6 +315,21 @@ Jun  1 12:00:01 h dovecot[4000]:auth: pam(x sshd[1]: Failed password for root fr
 Jun  1 12:00:02 h sshd[500]: Failed password for root from 203.0.113.77 port 40001 ssh2
 EOF
 
+# regressions/ssh-rewritten-tag.log: the tag is not always the program. The
+# Docker syslog driver uses the container id, relays and rsyslog templates
+# substitute their own label, and unix_chkpwd logs the PAM line. Requiring the
+# tag to name ssh made a real brute force from a containerized sshd report zero
+# failures, which reads as "no attack". What decides is whether the event words
+# start right after the tag, not how the tag reads.
+: > "$FIX/regressions/ssh-rewritten-tag.log"
+for i in 1 2 3 4 5 6; do
+  printf 'Jun  1 13:00:%02d h a1b2c3d4e5f6[1234]: Failed password for root from 203.0.113.88 port 4%04d ssh2\n' \
+    "$i" "$i" >> "$FIX/regressions/ssh-rewritten-tag.log"
+done
+cat >> "$FIX/regressions/ssh-rewritten-tag.log" <<'EOF'
+Jun  1 13:00:07 h unix_chkpwd[9]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.88 user=root
+EOF
+
 # regressions/firewall-icmp.log: ICMP has no ports, so the fields after src/dst
 # are type/code. Without a protocol gate those were reported as ports. Also
 # carries an IPv6 blocked source.

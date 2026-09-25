@@ -33,7 +33,7 @@ resume.
 | Sanitizing stays fast on bash 4.0 | CHANGELOG | `floor-bash4` CI step — 13,000 escape sequences through the tree and the artifact under bash 4.0 and busybox, each under 20s |
 | An invalid byte cannot stop a run | README, CHANGELOG | `tests/hostile.bats` — `\377` beside an escape sequence under a UTF-8 locale exits 0 in pretty and JSON with no raw ESC; EUC stray bytes pass through unchanged |
 | Escaped quotes in Apache logs do not hide payloads | CHANGELOG | `tests/regressions.bats` — SQLi and XSS after `\"`, spoofed status, user field, referer and user agent, CRLF |
-| The SSH source address comes from sshd, not from client text | README, CHANGELOG | `tests/regressions.bats` — a framed username, a PAM `user=`, a forged program tag, and one event read identically across four log shapes; the `floor-bash4` CI step repeats the check under busybox awk |
+| The SSH source address comes from sshd, not from client text | README, CHANGELOG | `tests/regressions.bats` — a framed username, a PAM `user=`, a forged program tag, a rewritten tag that must still count, and one event read identically across four log shapes; the `floor-bash4` CI step repeats the check under busybox awk. Bounded by the CHANGELOG's Known issues: attribution is trusted, not proved |
 | No analyzer aborts on mismatched input | — | `tests/robustness.bats` — all 8 analyzers over every fixture, plus empty and junk files |
 
 ## Audit note

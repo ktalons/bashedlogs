@@ -247,6 +247,14 @@ setup() {
   [ "${lines[2]}" = "1" ]
 }
 
+@test "a rewritten program tag does not hide a real brute force" {
+  # Requiring the tag to name ssh made a containerized sshd report 0 failures.
+  run bash -c "\"$BL\" -o json --bf-threshold 5 --bf-window 300 \"$FIXTURES/regressions/ssh-rewritten-tag.log\" | jq -r '.metrics.failed_auth, .metrics.top_attacking_ips, [.findings[]|select(.category==\"brute-force\")][0].data.ip'"
+  [ "${lines[0]}" = "6" ]
+  [ "${lines[1]}" = "203.0.113.88 (6)" ]
+  [ "${lines[2]}" = "203.0.113.88" ]
+}
+
 @test "every log shape reads the same source from the same event" {
   # One event, six times, in the shapes that move the message start: journald
   # export, one-line json, RFC 5424 with a BOM, and `journalctl -o cat`, which
