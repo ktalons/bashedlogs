@@ -255,6 +255,16 @@ setup() {
   [ "${lines[2]}" = "203.0.113.88" ]
 }
 
+@test "stacked message prefixes do not swallow a failure" {
+  # A relay re-stamps a Solaris id onto a line that has one, and a repeat
+  # wrapper sits on either side of it. Stripping one of each left the second in
+  # front of the event words, so 6 failures counted as 1 and no burst alerted.
+  run bash -c "\"$BL\" -o json --bf-threshold 5 --bf-window 300 \"$FIXTURES/regressions/ssh-stacked-prefix.log\" | jq -r '.metrics.failed_auth, .metrics.top_attacking_ips, [.findings[]|select(.category==\"brute-force\")][0].data.ip'"
+  [ "${lines[0]}" = "6" ]
+  [ "${lines[1]}" = "203.0.113.99 (6)" ]
+  [ "${lines[2]}" = "203.0.113.99" ]
+}
+
 @test "every log shape reads the same source from the same event" {
   # One event, six times, in the shapes that move the message start: journald
   # export, one-line json, RFC 5424 with a BOM, and `journalctl -o cat`, which

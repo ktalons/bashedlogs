@@ -330,6 +330,21 @@ cat >> "$FIX/regressions/ssh-rewritten-tag.log" <<'EOF'
 Jun  1 13:00:07 h unix_chkpwd[9]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.88 user=root
 EOF
 
+# regressions/ssh-stacked-prefix.log: a Solaris message id and an rsyslog
+# repeat wrapper both sit between the tag and the event, and a relay that
+# re-stamps a line already carrying one leaves two. Stripping one of each let
+# the second survive, and an event matched only at the front of the message, so
+# six real failures counted as five and the burst slipped under the threshold.
+: > "$FIX/regressions/ssh-stacked-prefix.log"
+for i in 1 2 3 4; do
+  printf 'Jun  1 14:00:%02d h sshd[700]: [ID 800047 auth.info] [ID 800047 auth.info] Failed password for root from 203.0.113.99 port 4%04d ssh2\n' \
+    "$i" "$i" >> "$FIX/regressions/ssh-stacked-prefix.log"
+done
+cat >> "$FIX/regressions/ssh-stacked-prefix.log" <<'EOF'
+Jun  1 14:00:05 h sshd[700]: [ID 800047 auth.info] message repeated 2 times: [ Failed password for root from 203.0.113.99 port 40005 ssh2]
+Jun  1 14:00:06 h sshd[700]: message repeated 2 times: [ [ID 800047 auth.info] Failed password for root from 203.0.113.99 port 40006 ssh2]
+EOF
+
 # regressions/firewall-icmp.log: ICMP has no ports, so the fields after src/dst
 # are type/code. Without a protocol gate those were reported as ports. Also
 # carries an IPv6 blocked source.

@@ -107,10 +107,17 @@ auth_ssh_analyze() {
       return (k > 0) ? substr(s, 1, k - 1) : s
     }
     # Solaris message IDs and rsyslog repeat wrappers sit before the event.
-    function strip_prefix(b) {
-      sub(/^[ \t]+/, "", b)
-      sub(/^\[ID [0-9]+ [a-z0-9]+\.[a-z]+\] /, "", b)
-      sub(/^message repeated [0-9]+ times: \[ /, "", b)
+    function strip_prefix(b,   n) {
+      # Relays re-stamp a line that already carries a Solaris ID, and a repeat
+      # wrapper can sit on either side of one, so these stack in any order.
+      # Strip until nothing more comes off: one pass each left the second copy
+      # in place, and the event matchers need the words at the front.
+      while (length(b) != n) {
+        n = length(b)
+        sub(/^[ \t]+/, "", b)
+        sub(/^\[ID [0-9]+ [a-z0-9]+\.[a-z]+\] /, "", b)
+        sub(/^message repeated [0-9]+ times: \[ /, "", b)
+      }
       return b
     }
     # sshd message text of the current line, or "" when it is not sshd.
@@ -143,7 +150,7 @@ auth_ssh_analyze() {
         # there means the words are quoted inside some other message.
         gap = (p > e) ? substr(s, e, p - e) : ""
         if (tolower(substr(" " pre " ", RSTART, RLENGTH)) !~ /ssh/ &&
-            gap !~ /^[ \t]*(\[ID [0-9]+ [a-z0-9]+\.[a-z]+\] )?(message repeated [0-9]+ times: \[ )?$/)
+            strip_prefix(gap) != "")
           return ""
         return strip_prefix(substr(s, (e < p) ? e : p))
       }

@@ -1,0 +1,6 @@
+Jun  1 14:00:01 h sshd[700]: [ID 800047 auth.info] [ID 800047 auth.info] Failed password for root from 203.0.113.99 port 40001 ssh2
+Jun  1 14:00:02 h sshd[700]: [ID 800047 auth.info] [ID 800047 auth.info] Failed password for root from 203.0.113.99 port 40002 ssh2
+Jun  1 14:00:03 h sshd[700]: [ID 800047 auth.info] [ID 800047 auth.info] Failed password for root from 203.0.113.99 port 40003 ssh2
+Jun  1 14:00:04 h sshd[700]: [ID 800047 auth.info] [ID 800047 auth.info] Failed password for root from 203.0.113.99 port 40004 ssh2
+Jun  1 14:00:05 h sshd[700]: [ID 800047 auth.info] message repeated 2 times: [ Failed password for root from 203.0.113.99 port 40005 ssh2]
+Jun  1 14:00:06 h sshd[700]: message repeated 2 times: [ [ID 800047 auth.info] Failed password for root from 203.0.113.99 port 40006 ssh2]

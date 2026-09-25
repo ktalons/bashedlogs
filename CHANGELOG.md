@@ -58,6 +58,11 @@ all five, plus two more found while fixing those.
   stderr. Under EUC, bash could also add a stray byte to text it passed along.
   The analyzers now run under `LC_ALL=C` and treat log text as bytes. The
   caller's locale still decides which bytes the report shows as C1 controls.
+- A Solaris message id and an rsyslog repeat wrapper both sit between the
+  program tag and the event, and a relay that re-stamps a line already carrying
+  one leaves two. Only one of each was stripped, so the second stayed in front
+  of the event words and the line was not read as a failure at all. On a
+  re-stamped log a six-attempt burst counted as one and never alerted.
 - Reading the SSH source from sshd's own message also fixed a miscount on
   journald JSON exports, where the closing quote is glued to the last field. A
   PAM line ending `user=root"` was not counted as an attempt on root, so a
@@ -79,7 +84,7 @@ all five, plus two more found while fixing those.
 - Source files follow the code notation standard: a header on every file,
   section headings, and `NOTE:`, `WARN:`, and `SECURITY:` markers. Comments
   only. No executable line changed.
-- 147 bats tests, up from 106.
+- 148 bats tests, up from 106.
 
 ### Known issues
 
