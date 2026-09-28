@@ -1,0 +1,7 @@
+<38>1 2025-06-01T10:00:01.000000Z h 3f2a1b4c5d6e 1234 - - Failed password for root from 203.0.113.55 port 40001 ssh2
+<38>1 2025-06-01T10:00:02.000000Z h 3f2a1b4c5d6e 1234 - - Failed password for root from 203.0.113.55 port 40002 ssh2
+<38>1 2025-06-01T10:00:03.000000Z h 3f2a1b4c5d6e 1234 - - Failed password for root from 203.0.113.55 port 40003 ssh2
+<38>1 2025-06-01T10:00:04.000000Z h 3f2a1b4c5d6e 1234 - - Failed password for root from 203.0.113.55 port 40004 ssh2
+<38>1 2025-06-01T10:00:05.000000Z h 3f2a1b4c5d6e 1234 - - Failed password for root from 203.0.113.55 port 40005 ssh2
+<38>1 2025-06-01T10:00:06.000000Z h 3f2a1b4c5d6e 1234 - - Failed password for root from 203.0.113.55 port 40006 ssh2
+<38>1 2025-06-01T10:00:07.000000Z h dovecot 4000 - - auth: pam(x sshd[1]: Failed password for root from 198.51.100.7 port 22 ssh2,203.0.113.77): unknown user

@@ -146,7 +146,8 @@ program's message are not read as sshd's. What decides is where the words sit,
 not what the program tag says, because relays and container runtimes rewrite
 the tag and a real attack must not disappear behind one. Attribution is
 therefore trusted rather than proved, and an app log mixed into an auth log can
-still put an address on a burst. The CHANGELOG lists the cases.
+still put an address on an event, a successful login included. The CHANGELOG
+lists the cases.
 
 What each release found and fixed is in the [CHANGELOG](CHANGELOG.md).
 

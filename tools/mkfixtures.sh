@@ -345,6 +345,21 @@ Jun  1 14:00:05 h sshd[700]: [ID 800047 auth.info] message repeated 2 times: [ F
 Jun  1 14:00:06 h sshd[700]: message repeated 2 times: [ [ID 800047 auth.info] Failed password for root from 203.0.113.99 port 40006 ssh2]
 EOF
 
+# regressions/ssh-rfc5424-container.log: RFC 5424 keeps the program in APP-NAME,
+# which a container runtime rewrites just as it rewrites a syslog tag, and its
+# timestamp sits after the priority and version rather than first. The name was
+# gated here after it had been dropped everywhere else, so a real burst counted
+# zero; the unparsed timestamp then meant even a counted burst alerted on
+# nothing. Last line is another program quoting sshd text, which must stay out.
+: > "$FIX/regressions/ssh-rfc5424-container.log"
+for i in 1 2 3 4 5 6; do
+  printf '<38>1 2025-06-01T10:00:%02d.000000Z h 3f2a1b4c5d6e 1234 - - Failed password for root from 203.0.113.55 port 4%04d ssh2\n' \
+    "$i" "$i" >> "$FIX/regressions/ssh-rfc5424-container.log"
+done
+cat >> "$FIX/regressions/ssh-rfc5424-container.log" <<'EOF'
+<38>1 2025-06-01T10:00:07.000000Z h dovecot 4000 - - auth: pam(x sshd[1]: Failed password for root from 198.51.100.7 port 22 ssh2,203.0.113.77): unknown user
+EOF
+
 # regressions/firewall-icmp.log: ICMP has no ports, so the fields after src/dst
 # are type/code. Without a protocol gate those were reported as ports. Also
 # carries an IPv6 blocked source.

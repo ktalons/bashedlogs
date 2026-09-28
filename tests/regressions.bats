@@ -220,6 +220,7 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" != *"198.51.100.7"* ]]
   run "$BL" -o json --bf-threshold 5 --bf-window 300 "$FIXTURES/regressions/ssh-framed-user.log"
+  [ "$status" -eq 0 ]
   [[ "$output" != *"198.51.100.7"* ]]
 }
 
@@ -263,6 +264,24 @@ setup() {
   [ "${lines[0]}" = "6" ]
   [ "${lines[1]}" = "203.0.113.99 (6)" ]
   [ "${lines[2]}" = "203.0.113.99" ]
+}
+
+@test "a container-rewritten RFC 5424 APP-NAME still alerts" {
+  # APP-NAME is the 5424 program field, and a container runtime rewrites it the
+  # same way it rewrites a syslog tag. It was still name-gated here after the
+  # gate had been dropped elsewhere, so the burst counted 0; its timestamp sits
+  # in the second field, so even once counted it alerted on nothing. --format is
+  # explicit because nothing in a 5424 log matches the auth_ssh detector.
+  run bash -c "\"$BL\" --format auth_ssh -o json --bf-threshold 3 --bf-window 600 \"$FIXTURES/regressions/ssh-rfc5424-container.log\" | jq -r '.metrics.failed_auth, .metrics.top_attacking_ips, [.findings[]|select(.category==\"brute-force\")][0].data.ip'"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "6" ]
+  [ "${lines[1]}" = "203.0.113.55 (6)" ]
+  [ "${lines[2]}" = "203.0.113.55" ]
+
+  # The last line is dovecot quoting sshd text. Its address stays out entirely.
+  run "$BL" --format auth_ssh -o json "$FIXTURES/regressions/ssh-rfc5424-container.log"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"198.51.100.7"* ]]
 }
 
 @test "every log shape reads the same source from the same event" {

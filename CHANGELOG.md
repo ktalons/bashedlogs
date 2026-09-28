@@ -58,6 +58,15 @@ all five, plus two more found while fixing those.
   stderr. Under EUC, bash could also add a stray byte to text it passed along.
   The analyzers now run under `LC_ALL=C` and treat log text as bytes. The
   caller's locale still decides which bytes the report shows as C1 controls.
+- RFC 5424 keeps the program name in APP-NAME, which a container runtime
+  rewrites exactly as it rewrites a syslog tag. That field was still required to
+  name ssh after the requirement had been dropped everywhere else, so a real
+  burst under a rewritten APP-NAME counted zero failures. Position decides there
+  too now.
+- RFC 5424 puts its timestamp after the priority and version, and only the first
+  field was ever parsed as a time. Every time-window finding needs a timestamp,
+  so a brute force in any 5424 log, whatever its APP-NAME, appeared in the
+  metrics and raised no finding and no threat score.
 - A Solaris message id and an rsyslog repeat wrapper both sit between the
   program tag and the event, and a relay that re-stamps a line already carrying
   one leaves two. Only one of each was stripped, so the second stayed in front
@@ -84,15 +93,17 @@ all five, plus two more found while fixing those.
 - Source files follow the code notation standard: a header on every file,
   section headings, and `NOTE:`, `WARN:`, and `SECURITY:` markers. Comments
   only. No executable line changed.
-- 148 bats tests, up from 106.
+- 149 bats tests, up from 106.
 
 ### Known issues
 
 - Attribution is trusted, not proved, so an app log mixed into an auth log can
-  still put an address on a burst. Reading by position means any program whose
+  still put an address on any event. Reading by position means any program whose
   message opens with sshd words is read as sshd, and an app that writes
   attacker-controlled text at the start of its own message into the same file
-  can invent a burst against a machine that never connected. The reverse rule
+  can plant one. That is not limited to failures: a single forged `Accepted`
+  line after a genuine burst produces a critical possible-compromise naming a
+  real account, and a forged root accept raises root-password-login. The reverse rule
   hides a real burst behind a rewritten tag, which is worse for a detector, and
   no text-only rule separates the two: once the tag is rewritten the line no
   longer carries what wrote it. Three more cases are open. A journald

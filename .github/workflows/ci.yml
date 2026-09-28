@@ -91,8 +91,9 @@ jobs:
               # SSH source attribution is all awk string work, so busybox awk
               # gets its own check: no client-supplied address in the report,
               # the real source on both the burst and the forged tag, and a
-              # real burst still counted behind a rewritten tag and stacked
-              # message prefixes, which are the two ways it can go silent.
+              # real burst still counted behind a rewritten tag, stacked
+              # message prefixes and an RFC 5424 header, which are the three
+              # ways it can go silent.
               out=$("$bl" -o json --bf-threshold 5 --bf-window 300 tests/fixtures/regressions/ssh-framed-user.log)
               case $out in *198.51.100.7*) echo "$bl: framed address in report"; exit 1 ;; esac
               case $out in *"203.0.113.66 (12)"*) ;; *) echo "$bl: wrong brute-force source"; exit 1 ;; esac
@@ -102,6 +103,12 @@ jobs:
               case $out in *"203.0.113.88 (6)"*) ;; *) echo "$bl: rewritten tag hid a burst"; exit 1 ;; esac
               out=$("$bl" -o json --bf-threshold 5 --bf-window 300 tests/fixtures/regressions/ssh-stacked-prefix.log)
               case $out in *"203.0.113.99 (6)"*) ;; *) echo "$bl: stacked prefix swallowed failures"; exit 1 ;; esac
+              # RFC 5424 has two ways to go quiet, so both are asserted: the
+              # APP-NAME no longer has to name ssh, and the timestamp is read
+              # from the second field, without which no windowed finding fires.
+              out=$("$bl" --format auth_ssh -o json --bf-threshold 5 --bf-window 300 tests/fixtures/regressions/ssh-rfc5424-container.log)
+              case $out in *"203.0.113.55 (6)"*) ;; *) echo "$bl: rewritten APP-NAME hid a burst"; exit 1 ;; esac
+              case $out in *"\"category\":\"brute-force\""*) ;; *) echo "$bl: 5424 timestamp unparsed, no windowed finding"; exit 1 ;; esac
             done
           '
       - name: Control bytes escaped in bounded time under bash 4.0 / busybox

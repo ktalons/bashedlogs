@@ -135,7 +135,6 @@ auth_ssh_analyze() {
       # Only on a JSON line: sshd writes a username quote as a raw quote.
       if (s ~ /^[ \t]*\{/ && match(s, /[{,]"MESSAGE":"/))
         return strip_prefix(json_value(substr(s, RSTART + RLENGTH)))
-      if (s ~ /^<[0-9]+>[0-9]+ / && $4 != "-" && tolower($4) !~ /ssh/) return ""
       if (BOM != "" && (k = index(s, BOM)) > 0)
         s = substr(s, 1, k - 1) " " substr(s, k + length(BOM))
       if (!match(" " s, OPENER)) return ""
@@ -190,6 +189,12 @@ auth_ssh_analyze() {
       if (e < 0) {
         # journald short-iso exports of sshd logs carry ISO timestamps
         e = bl_iso_epoch($1)
+        # RFC 5424 puts its timestamp after the priority and version, so the
+        # first field never parses. Without this a burst in a 5424 log counts
+        # in the metrics and alerts on nothing, since every time-window finding
+        # needs an epoch. Guarded on the 5424 opener so no other shape is read
+        # this way.
+        if (e < 0 && $0 ~ /^<[0-9]+>[0-9]+ /) e = bl_iso_epoch($2)
         if (e > 0) prev_e = e
         return e
       }
