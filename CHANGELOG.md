@@ -4,7 +4,7 @@
 
 A security release. A Claude Security review of v2.0.0 found five ways a
 crafted log could mislead the analyst reading the report. This release fixes
-all five, plus two more found while fixing those.
+all five, plus six more found while fixing those.
 
 ### Fixed in security review
 
@@ -103,8 +103,9 @@ all five, plus two more found while fixing those.
   attacker-controlled text at the start of its own message into the same file
   can plant one. That is not limited to failures: a single forged `Accepted`
   line after a genuine burst produces a critical possible-compromise naming a
-  real account, and a forged root accept raises root-password-login. The reverse rule
-  hides a real burst behind a rewritten tag, which is worse for a detector, and
+  real account, and a forged root accept raises root-password-login. The
+  reverse rule hides a real burst behind a rewritten tag, which is worse for a
+  detector, and
   no text-only rule separates the two: once the tag is rewritten the line no
   longer carries what wrote it. Three more cases are open. A journald
   `MESSAGE=` record is read whatever its `SYSLOG_IDENTIFIER` says; a tag
