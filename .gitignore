@@ -24,3 +24,9 @@ samples/
 .idea/
 *.swp
 *.swo
+
+# Locally built copy of the tool, in case the artifact is tried out in place
+/bashedlogs
+
+# Real home-lab telemetry used for manual spot checks, never committed
+tests/fixtures/wazuh/talonsoclab-*.json
