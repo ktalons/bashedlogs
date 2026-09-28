@@ -109,6 +109,7 @@ jobs:
               out=$("$bl" --format auth_ssh -o json --bf-threshold 5 --bf-window 300 tests/fixtures/regressions/ssh-rfc5424-container.log)
               case $out in *"203.0.113.55 (6)"*) ;; *) echo "$bl: rewritten APP-NAME hid a burst"; exit 1 ;; esac
               case $out in *"\"category\":\"brute-force\""*) ;; *) echo "$bl: 5424 timestamp unparsed, no windowed finding"; exit 1 ;; esac
+              case $out in *198.51.100.7*) echo "$bl: quoted sshd text in a 5424 line was attributed"; exit 1 ;; esac
             done
           '
       - name: Control bytes escaped in bounded time under bash 4.0 / busybox

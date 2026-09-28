@@ -360,6 +360,21 @@ cat >> "$FIX/regressions/ssh-rfc5424-container.log" <<'EOF'
 <38>1 2025-06-01T10:00:07.000000Z h dovecot 4000 - - auth: pam(x sshd[1]: Failed password for root from 198.51.100.7 port 22 ssh2,203.0.113.77): unknown user
 EOF
 
+# regressions/ssh-rfc5424-forgeable.log: the disclosed fail-open, pinned. With
+# no text between the structured-data field and the event words, there is no tag
+# to test, so position alone decides and another program is read as sshd. The
+# container fixture only covers the gapped variant, where embedded "auth:" looks
+# like a tag and is rejected, which made this simpler case look covered when it
+# was not. Classic syslog behaves the same way and always has. A rule that
+# rejected this would hide a real burst behind a rewritten APP-NAME, so the
+# behaviour is documented in the CHANGELOG rather than changed, and asserted
+# here so it can never change unnoticed.
+: > "$FIX/regressions/ssh-rfc5424-forgeable.log"
+for i in 1 2 3; do
+  printf '<38>1 2025-06-01T10:00:%02d.000000Z h dovecot 4000 - - Failed password for root from 198.51.100.7 port 22 ssh2\n' \
+    "$i" >> "$FIX/regressions/ssh-rfc5424-forgeable.log"
+done
+
 # regressions/firewall-icmp.log: ICMP has no ports, so the fields after src/dst
 # are type/code. Without a protocol gate those were reported as ports. Also
 # carries an IPv6 blocked source.

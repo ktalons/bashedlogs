@@ -284,6 +284,23 @@ setup() {
   [[ "$output" != *"198.51.100.7"* ]]
 }
 
+@test "an RFC 5424 line with no tag text is read by position, as documented" {
+  # Characterization, not an endorsement. Nothing sits between the structured
+  # data and the event words, so there is no tag to reject and position alone
+  # decides: dovecot is read as sshd. Classic syslog does this too, at this
+  # commit and at every commit before it, and the CHANGELOG Known issues names
+  # it. The test exists so the day this changes, it changes on purpose.
+  run bash -c "\"$BL\" --format auth_ssh -o json --bf-threshold 3 --bf-window 600 \"$FIXTURES/regressions/ssh-rfc5424-forgeable.log\" | jq -r '.metrics.failed_auth, .metrics.top_attacking_ips'"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "3" ]
+  [ "${lines[1]}" = "198.51.100.7 (3)" ]
+
+  # The gapped variant is the one that IS rejected, and must stay rejected.
+  run "$BL" --format auth_ssh -o json "$FIXTURES/regressions/ssh-rfc5424-container.log"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"198.51.100.7"* ]]
+}
+
 @test "every log shape reads the same source from the same event" {
   # One event, six times, in the shapes that move the message start: journald
   # export, one-line json, RFC 5424 with a BOM, and `journalctl -o cat`, which

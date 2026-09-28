@@ -93,7 +93,7 @@ all five, plus six more found while fixing those.
 - Source files follow the code notation standard: a header on every file,
   section headings, and `NOTE:`, `WARN:`, and `SECURITY:` markers. Comments
   only. No executable line changed.
-- 149 bats tests, up from 106.
+- 150 bats tests, up from 106.
 
 ### Known issues
 
@@ -105,9 +105,14 @@ all five, plus six more found while fixing those.
   line after a genuine burst produces a critical possible-compromise naming a
   real account, and a forged root accept raises root-password-login. The
   reverse rule hides a real burst behind a rewritten tag, which is worse for a
-  detector, and
-  no text-only rule separates the two: once the tag is rewritten the line no
-  longer carries what wrote it. Three more cases are open. A journald
+  detector, and no text-only rule separates the two: once the tag is rewritten
+  the line no longer carries what wrote it. This covers RFC 5424, where the
+  rewritten field is APP-NAME. A 5424 line with nothing between its structured
+  data and the event words has no tag to test at all, so position alone
+  decides. Classic syslog has always behaved that way; as of this release 5424
+  matches it, where before it was protected only by the same gate that hid a
+  containerized sshd. A test pins that case so it cannot change unnoticed.
+  Three more cases are open. A journald
   `MESSAGE=` record is read whatever its `SYSLOG_IDENTIFIER` says; a tag
   holding a character the tag pattern does not cover is not seen as a tag at
   all and the line falls through untested; and an accept takes the first
