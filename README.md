@@ -27,7 +27,7 @@ Needs bash 4.0+ and standard utilities. macOS ships bash 3.2, so
 single file with `tools/build.sh`.
 
 ```
-bashedlogs v2.1.0-dev
+bashedlogs v2.1.0
   file    /var/log/auth.log
   format  auth_ssh
 
@@ -47,9 +47,6 @@ Threat score  25/100 (high)
 ```
 
 ## What's new in 2.1
-
-> [!NOTE]
-> Not tagged yet. `main` has it, but `releases/latest` is still v2.0.1.
 
 - SSH brute force groups by source IP and destination host, applies UTC
   offsets, and keeps file order when timestamps tie.

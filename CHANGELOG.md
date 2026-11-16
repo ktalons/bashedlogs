@@ -1,6 +1,10 @@
 # Changelog
 
-## v2.1.0 (unreleased)
+## v2.1.0
+
+An accuracy release. SSH reports now say how each event was attributed, the
+structured formats read their documented fields, and the hardening from a
+repo-wide review is in.
 
 - SSH windows use validated timestamps and UTC offsets, preserve ties in input
   order, and correlate per source and destination host. Equivalent IPv6
@@ -22,6 +26,26 @@
   builder validates versions and replaces the executable after a syntax check.
 - Pinned CI action and test-tool revisions and verified the ShellCheck download
   digest before extraction.
+
+### Fixed before release
+
+- Two SSH patterns escaped a bracket inside a bracket expression, where POSIX
+  reads the backslash as a literal. busybox awk rejected one outright, so every
+  run failed format detection, and read the other as a different pattern, so
+  failures inside an rsyslog repeat wrapper lost their source address. The
+  bash 4.0 and busybox CI job caught both.
+
+### Known issues
+
+- Two cases from v2.0.1's list no longer raise findings. A forged `Accepted`
+  line from another program is counted under `position_only_ssh_events` and
+  cannot complete a possible-compromise finding, and an accept with two peer
+  clauses has no peer.
+- Producer names are still taken as the log states them. A process that can
+  write a line tagged `sshd` into the same log can still place an event.
+- A host that logs native sshd failures is counted from those, not its PAM
+  lines. A mixed export with unmatched PAM failures from that host can
+  undercount.
 
 ## v2.0.1
 

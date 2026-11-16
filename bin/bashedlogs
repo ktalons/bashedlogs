@@ -12,7 +12,7 @@ set -euo pipefail
 # *--- Configuration ---*
 
 # shellcheck disable=SC2034  # read by lib/core (cli --version, output emitters)
-BASHEDLOGS_VERSION="2.1.0-dev"
+BASHEDLOGS_VERSION="2.1.0"
 
 # *--- Bash Version Guard ---*
 
