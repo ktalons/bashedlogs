@@ -105,7 +105,9 @@ function ssh_record(line,    s, h, tag, ts, root, ident, e) {
   }
   if (match(s, /^[^ \t:\[]+(\[[0-9]+(:[0-9]+)?\]:?|:)/)) {
     tag = substr(s, 1, RLENGTH)
-    sub(/[\[:].*$/, "", tag)
+    # NOTE: (\[|:), not [\[:]. In a bracket expression "[:" opens a class
+    # name, and busybox awk rejects the pattern outright.
+    sub(/(\[|:).*$/, "", tag)
     ssh_named = ssh_name(tag)
     s = substr(s, RLENGTH + 1)
   } else return ""
@@ -158,7 +160,9 @@ auth_ssh_analyze() {
     function peer(s, last,    rest, fields, tok, count, pos, len, chosen) {
       rest = s
       peer_user = ""
-      while (match(rest, / from [^ \t]+ port [0-9]+ ssh[12]([: \t\]]|$)/)) {
+      # NOTE: "]" leads the set. A backslash is literal inside brackets in
+      # POSIX, so busybox read [: \t\]] as a set and then a required "]".
+      while (match(rest, / from [^ \t]+ port [0-9]+ ssh[12]([]: \t]|$)/)) {
         pos = RSTART; len = RLENGTH
         split(substr(rest, pos + 1, len - 1), fields, " ")
         tok = bl_normal_ip(fields[2])
