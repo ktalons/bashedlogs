@@ -68,7 +68,7 @@ load test_helper
   run "$BL" --help
   [ "$status" -eq 0 ]
   for flag in --output --format --list-formats --strict --fail-level \
-              --bf-threshold --bf-window --iocs --defang --mmdb-dir \
+              --bf-threshold --bf-window --ssh-named-only --iocs --defang --mmdb-dir \
               --enrich-online --no-color --version; do
     [[ "$output" == *"$flag"* ]] || {
       echo "help is missing $flag" >&2

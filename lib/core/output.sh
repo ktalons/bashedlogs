@@ -38,19 +38,50 @@ sev_color() {
 
 # *--- JSON Helpers ---*
 
-# json_escape <string>: prints a JSON-safe version (no surrounding quotes).
+# JSON reports are UTF-8 even when the input log is byte-oriented. Forward
+# well-formed UTF-8 and replace malformed bytes with U+FFFD. C0 handling
+# preserves the report contract for newlines, tabs, and carriage returns.
 json_escape() {
   local s=$1
-  s=${s//\\/\\\\}
-  s=${s//\"/\\\"}
-  s=${s//$'\n'/\\n}
-  s=${s//$'\r'/\\r}
-  s=${s//$'\t'/\\t}
-  # Rare path: strip any remaining control characters.
-  if [[ $s == *[$'\001'-$'\037']* ]]; then
-    s=$(printf '%s' "$s" | tr -d '\000-\037')
+  if [[ $s != *[![:print:]]* ]]; then
+    s=${s//\\/\\\\}
+    s=${s//\"/\\\"}
+    printf '%s' "$s"
+    return
   fi
-  printf '%s' "$s"
+  printf '%s' "$s" | od -An -v -tu1 | awk '
+    function flush(    j) {
+      for (j = 1; j <= buffered; j++) printf "\\ufffd"
+      buffered = need = 0
+    }
+    function byte(b,    j) {
+      if (need) {
+        if (b >= lower && b <= upper) {
+          bytes[++buffered] = b
+          lower = 128; upper = 191
+          if (--need == 0) {
+            for (j = 1; j <= buffered; j++) printf "%c", bytes[j]
+            buffered = 0
+          }
+          return
+        }
+        flush()
+      }
+      if (b == 34 || b == 92) printf "\\%c", b
+      else if (b == 9) printf "\\t"
+      else if (b == 10) printf "\\n"
+      else if (b == 13) printf "\\r"
+      else if (b >= 32 && b <= 127) printf "%c", b
+      else if (b >= 194 && b <= 244) {
+        bytes[1] = b; buffered = 1
+        need = b < 224 ? 1 : b < 240 ? 2 : 3
+        lower = b == 224 ? 160 : b == 240 ? 144 : 128
+        upper = b == 237 ? 159 : b == 244 ? 143 : 191
+      } else if (b >= 128) printf "\\ufffd"
+    }
+    { for (i = 1; i <= NF; i++) byte($i + 0) }
+    END { flush() }
+  '
 }
 
 # kv_to_json <tab-separated k=v pairs>: prints a JSON object.
@@ -60,8 +91,9 @@ kv_to_json() {
     printf '{}'
     return 0
   fi
-  local IFS=$'\t'
-  for pair in $kv; do
+  local -a pairs
+  IFS=$'\t' read -r -a pairs <<< "$kv"
+  for pair in "${pairs[@]}"; do
     k=${pair%%=*}
     v=${pair#*=}
     if [ -n "$out" ]; then out="$out,"; fi
@@ -131,7 +163,7 @@ enrichment_results_json() {
 
 emit_json() {
   local file=$1 fmt=$2 score level findings="" iocs="" i
-  score=$(threat_score)
+  score=$R_SCORE
   level=$(threat_level "$score")
   if [ "${#R_SEV[@]}" -gt 0 ]; then
     for i in "${!R_SEV[@]}"; do
@@ -153,7 +185,7 @@ emit_json() {
 }
 
 ndjson_ioc_lines() {
-  local v
+  local v i
   for v in ${IOC_IPS[@]+"${IOC_IPS[@]}"}; do
     printf '{"type":"ioc","kind":"ip","value":"%s"}\n' "$(json_escape "$(maybe_defang "$v")")"
   done
@@ -172,11 +204,15 @@ ndjson_ioc_lines() {
   for v in ${IOC_SHA256[@]+"${IOC_SHA256[@]}"}; do
     printf '{"type":"ioc","kind":"sha256","value":"%s"}\n' "$(json_escape "$v")"
   done
+  for i in ${E_IP[@]+"${!E_IP[@]}"}; do
+    printf '{"type":"enrichment","ip":"%s","value":"%s"}\n' \
+      "$(json_escape "$(maybe_defang "${E_IP[$i]}")")" "$(json_escape "${E_TXT[$i]}")"
+  done
 }
 
 emit_ndjson() {
-  local file=$1 fmt=$2 score level i
-  score=$(threat_score)
+  local file=$1 fmt=$2 score level i enrichment=""
+  score=$R_SCORE
   level=$(threat_level "$score")
   if [ "${#R_SEV[@]}" -gt 0 ]; then
     for i in "${!R_SEV[@]}"; do
@@ -191,14 +227,15 @@ emit_ndjson() {
   fi
   if [ "$DO_IOCS" -eq 1 ]; then
     ndjson_ioc_lines
+    enrichment=",\"enrichment_status\":\"$(json_escape "$ENRICH_STATUS")\""
   fi
-  printf '{"type":"summary","tool":"bashedlogs","version":"%s","file":"%s","format":"%s","metrics":%s,"findings":%s,"threat":{"score":%s,"level":"%s"}}\n' \
+  printf '{"type":"summary","tool":"bashedlogs","version":"%s","file":"%s","format":"%s","metrics":%s,"findings":%s,"threat":{"score":%s,"level":"%s"}%s}\n' \
     "$BASHEDLOGS_VERSION" \
     "$(json_escape "$file")" \
     "$fmt" \
     "$(metrics_to_json)" \
     "${#R_SEV[@]}" \
-    "$score" "$level"
+    "$score" "$level" "$enrichment"
 }
 
 # *--- Pretty Sanitizing ---*
@@ -339,7 +376,7 @@ pretty_safe() {
 # through pretty_safe before it is printed or wrapped in color.
 emit_pretty() {
   local file=$1 fmt=$2 score level i cell
-  score=$(threat_score)
+  score=$R_SCORE
   level=$(threat_level "$score")
 
   printf '%s\n' "${C_CYAN}${C_BOLD}bashedlogs${C_RESET}${C_DIM} v${BASHEDLOGS_VERSION}${C_RESET}"

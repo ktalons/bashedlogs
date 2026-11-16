@@ -17,7 +17,7 @@
 
 # *--- State ---*
 
-ENRICH_STATUS="skipped (no MMDB dir; online lookups not enabled)"
+ENRICH_STATUS="skipped (offline databases unavailable and online lookups disabled)"
 E_IP=()
 E_TXT=()
 
@@ -36,7 +36,7 @@ mmdb_value() {
 }
 
 enrich_tier_mmdb() {
-  local ip asn org cc txt
+  local ip asn org cc txt count=0
   local asn_db="$MMDB_DIR/GeoLite2-ASN.mmdb"
   local cdb=""
   if [ -f "$MMDB_DIR/GeoLite2-City.mmdb" ]; then
@@ -45,7 +45,8 @@ enrich_tier_mmdb() {
     cdb="$MMDB_DIR/GeoLite2-Country.mmdb"
   fi
   for ip in ${IOC_IPS[@]+"${IOC_IPS[@]}"}; do
-    if [ "${#E_IP[@]}" -ge 25 ]; then break; fi
+    if [ "$count" -ge 25 ]; then break; fi
+    count=$((count + 1))
     asn=""; org=""; cc=""
     if [ -f "$asn_db" ]; then
       asn=$(mmdblookup --file "$asn_db" --ip "$ip" autonomous_system_number 2>/dev/null | mmdb_value || true)
@@ -63,7 +64,7 @@ enrich_tier_mmdb() {
       E_TXT+=("$txt")
     fi
   done
-  ENRICH_STATUS="mmdb (${#E_IP[@]} of ${#IOC_IPS[@]} IPs resolved)"
+  ENRICH_STATUS="mmdb (${#E_IP[@]} of ${#IOC_IPS[@]} IPs resolved, cap 25)"
 }
 
 # *--- Tier 2: Online Lookups ---*
@@ -88,9 +89,9 @@ enrich_tier_online() {
     fi
     ptr=""
     if command -v dig >/dev/null 2>&1; then
-      ptr=$(dig +short -x "$ip" 2>/dev/null | head -1 || true)
+      ptr=$(dig +short +time=2 +tries=1 -x "$ip" 2>/dev/null | head -1 || true)
     elif command -v host >/dev/null 2>&1; then
-      ptr=$(host "$ip" 2>/dev/null | awk '/domain name pointer/ { print $NF; exit }' || true)
+      ptr=$(host -W 2 -R 1 "$ip" 2>/dev/null | awk '/domain name pointer/ { print $NF; exit }' || true)
     fi
     if [ -n "$ptr" ]; then
       txt="${txt:+$txt }ptr=$ptr"

@@ -29,23 +29,33 @@ register_format() {
 # NOTE: The sample is loaded once into a variable so detectors never run inside
 # a `while read` subshell. That is what makes the v1 return-in-subshell bug
 # structurally impossible rather than merely fixed.
-# load_sample <file>: first 200 lines into SAMPLE.
+# load_sample <file>: up to 200 lines and 256 KiB into SAMPLE. Drop a partial
+# last line when the byte cap cuts through a record.
 load_sample() {
+  local prefix
+  prefix=$(head -c 262145 -- "$1" 2>/dev/null | tr '\000' ' ' && printf '.') || return 1
+  prefix=${prefix%.}
+  if [ "${#prefix}" -gt 262144 ]; then
+    prefix=${prefix:0:262144}
+    if [[ $prefix == *$'\n'* ]]; then
+      prefix=${prefix%$'\n'*}
+    else
+      prefix=""
+    fi
+  fi
   # shellcheck disable=SC2034  # SAMPLE is read by the per-format detectors
-  SAMPLE=$(head -n 200 -- "$1" 2>/dev/null || true)
+  SAMPLE=$(printf '%s' "$prefix" | awk 'NR <= 200')
 }
 
-# detect_format <file>: prints best format id, or "generic" when nothing
-# clears DETECT_THRESHOLD. Returns 1 in that fallback case so --strict can
-# distinguish a real detection from the fallback.
+# Returns 1 with a generic fallback, 2 on input failure, or 3 on a detector error.
 detect_format() {
   local file=$1 best="" best_conf=0 fmt conf
-  load_sample "$file"
+  load_sample "$file" || return 2
   for fmt in "${FORMATS[@]}"; do
     if [ "$fmt" = "generic" ]; then continue; fi
-    conf=$("${fmt}_detect" 2>/dev/null) || conf=0
+    conf=$("${fmt}_detect" 2>/dev/null) || return 3
     case "$conf" in
-      ''|*[!0-9]*) conf=0 ;;
+      ''|*[!0-9]*) return 3 ;;
     esac
     if [ "$conf" -gt "$best_conf" ]; then
       best_conf=$conf

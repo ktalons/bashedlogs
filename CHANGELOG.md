@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.1.0 (unreleased)
+
+- SSH windows use validated timestamps and UTC offsets, preserve ties in input
+  order, and correlate per source and destination host. Equivalent IPv6
+  spellings count together. PAM fallback is selected per host.
+- SSH metrics disclose position-only events and losses from missing timestamps
+  or ambiguous peer clauses. Added `--ssh-named-only`. Root-password and
+  possible-compromise findings require named producer evidence. RFC 5424
+  structured data and journal JSON fields are read at their defined boundaries.
+- Wazuh and journald share a typed line-delimited JSON parser. Wazuh MITRE
+  identifiers come from `rule.mitre.id`, and reports track skipped records.
+- Route 53 accepts fractional timestamps in public query logs. DNS length-only
+  findings use medium severity. Web validates HTTP statuses and detects IPv6
+  clients. Firewall parses documented IPv4 and IPv6 filterlog fields and
+  validates ports. Syslog checks the producer for kernel and sudo findings.
+- Added IPv6 IOC extraction and NDJSON enrichment records. Offline lookup
+  limits now count attempts, including misses.
+- Hardened log path handling, numeric options, UTF-8 JSON encoding, and
+  failure reporting. Detection samples are byte-bounded, and the bundle
+  builder validates versions and replaces the executable after a syntax check.
+- Pinned CI action and test-tool revisions and verified the ShellCheck download
+  digest before extraction.
+
 ## v2.0.1
 
 A security release. A Claude Security review of v2.0.0 found five ways a

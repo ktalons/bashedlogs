@@ -12,143 +12,79 @@ register_format wazuh_alerts "Wazuh alerts.json (level histogram, top rules/agen
 # *--- Detection ---*
 
 wazuh_alerts_detect() {
-  local first
-  first=$(printf '%s\n' "$SAMPLE" | head -1)
-  case "$first" in
-    '{'*'"rule"'*'"level"'*) echo 95 ;;
-    '{'*'"agent"'*'"rule"'*) echo 80 ;;
-    *) echo 0 ;;
-  esac
+  printf '%s\n' "$SAMPLE" | awk "$AWK_JSON_LIB"'
+    /^[ \t]*\{/ {
+      rule = bl_jget(bl_json($0), "rule", "{")
+      if (bl_jget(rule, "level", "number")) { found = 1; exit }
+    }
+    END { print found ? 95 : 0 }
+  '
 }
 
 # *--- Analysis ---*
 
-# NOTE: Field extraction is awk string matching, not a real JSON parser, so
-# it has to be path-aware: a real alert carries manager.name, agent.name AND
-# decoder.name, and a bare search for "name" finds the manager on every
-# line - which silently attributed every alert to the Wazuh server instead
-# of the affected host. Values are read from within the parent object, and
-# quote scanning respects backslash escapes so a description containing \"
-# is not truncated.
 wazuh_alerts_analyze() {
   local file=$1
   local raw kind a b
 
-  raw=$(awk "$AWK_IP_LIB"'
-    # Read a quoted string value, honoring backslash escapes, so a value like
-    # "user said \"hi\"" is returned whole instead of cut at the first \".
-    function jstr(line, key,    pat, pos, i, c, out, esc) {
-      pat = "\"" key "\":\""
-      pos = index(line, pat)
-      if (pos == 0) return ""
-      i = pos + length(pat)
-      out = ""
-      esc = 0
-      while (i <= length(line)) {
-        c = substr(line, i, 1)
-        if (esc) {
-          # keep the escaped character as-is (\" -> ", \\ -> \)
-          out = out c
-          esc = 0
-        } else if (c == "\\") {
-          esc = 1
-        } else if (c == "\"") {
-          return out
-        } else {
-          out = out c
-        }
-        i++
-      }
-      return out
-    }
-    function jnum(line, key,    pat, pos, v) {
-      pat = "\"" key "\":"
-      pos = index(line, pat)
-      if (pos == 0) return -1
-      v = substr(line, pos + length(pat))
-      if (v !~ /^[0-9]/) return -1
-      sub(/[^0-9].*$/, "", v)
-      return v + 0
-    }
-    # Return the substring of the object named by key, brace-balanced, so
-    # nested lookups cannot leak into a sibling object.
-    function jobj(line, key,    pat, pos, i, depth, c, start, instr, esc) {
-      pat = "\"" key "\":{"
-      pos = index(line, pat)
-      if (pos == 0) return ""
-      start = pos + length(pat) - 1
-      depth = 0; instr = 0; esc = 0
-      for (i = start; i <= length(line); i++) {
-        c = substr(line, i, 1)
-        if (instr) {
-          if (esc) esc = 0
-          else if (c == "\\") esc = 1
-          else if (c == "\"") instr = 0
-          continue
-        }
-        if (c == "\"") { instr = 1; continue }
-        if (c == "{") depth++
-        else if (c == "}") {
-          depth--
-          if (depth == 0) return substr(line, start, i - start + 1)
-        }
-      }
-      return ""
-    }
-    /^\{/ {
+  # shellcheck disable=SC2016  # quoted awk program
+  raw=$(awk_log "$file" "$AWK_IP_LIB$AWK_JSON_LIB"'
+    {
+      root = bl_json($0)
+      rule = bl_jget(root, "rule", "{")
+      node = bl_jget(rule, "level", "number")
+      if (!node || J_value[node] !~ /^([0-9]|1[0-6])$/) { skipped++; next }
       total++
-      rule = jobj($0, "rule")
-      if (rule == "") rule = $0
-      level = jnum(rule, "level")
-      desc = jstr(rule, "description")
-      if (level >= 0) {
-        if (level > max_level) { max_level = level; worst = desc }
-        if (level >= 12) crit++
-        else if (level >= 8) high++
-        else if (level >= 4) mid++
-        else low++
-      }
-      # agent.name specifically - manager.name and decoder.name also exist.
-      agentobj = jobj($0, "agent")
-      agent = (agentobj != "") ? jstr(agentobj, "name") : ""
+      level = J_value[node] + 0
+      desc = bl_jstr(rule, "description")
+      if (total == 1 || level > max_level) { max_level = level; worst = desc }
+      if (level >= 12) crit++
+      else if (level >= 8) high++
+      else if (level >= 4) mid++
+      else low++
+
+      agent = bl_jstr(bl_jget(root, "agent", "{"), "name")
       if (agent != "") agents[agent]++
-      if (desc != "") { rules[desc]++ }
-      dataobj = jobj($0, "data")
-      srcip = (dataobj != "") ? jstr(dataobj, "srcip") : jstr($0, "srcip")
-      srcip = bl_clean_ip(srcip)
-      if (srcip != "" && bl_valid_ip(srcip)) srcips[srcip]++
-      if (first_ts == "") first_ts = jstr($0, "timestamp")
-      last_ts = jstr($0, "timestamp")
-      # MITRE technique ids appear as "id":["T1110",...] inside rule.mitre
-      line = $0
-      while (match(line, /T1[0-9][0-9][0-9][0-9]?(\.[0-9][0-9][0-9])?/)) {
-        mitre[substr(line, RSTART, RLENGTH)] = 1
-        line = substr(line, RSTART + RLENGTH)
+      if (desc != "") rules[desc]++
+      data = bl_jget(root, "data", "{")
+      srcip = data ? bl_jstr(data, "srcip") : bl_jstr(root, "srcip")
+      srcip = bl_normal_ip(srcip)
+      if (srcip != "") srcips[srcip]++
+      ts = bl_jstr(root, "timestamp")
+      if (ts != "") {
+        if (first_ts == "") first_ts = ts
+        last_ts = ts
+      }
+
+      ids = bl_jget(bl_jget(rule, "mitre", "{"), "id", "[")
+      for (i = 1; (node = bl_jget(ids, i, "")); i++) {
+        t = J_value[node]
+        if (J_type[node] == "string" && t ~ /^T[0-9]{4}(\.[0-9]{3})?$/) mitre[t] = 1
       }
     }
     END {
       printf "TOTAL\t%d\t-\n", total
+      printf "SKIPPED\t%d\t-\n", skipped
       printf "CRIT\t%d\t-\n", crit
       printf "HIGH\t%d\t-\n", high
       printf "MID\t%d\t-\n", mid
       printf "LOW\t%d\t-\n", low
       printf "MAXLEVEL\t%d\t%s\n", max_level, bl_tsv(worst)
-      if (first_ts != "") printf "FIRSTTS\t%s\t-\n", first_ts
-      if (last_ts != "") printf "LASTTS\t%s\t-\n", last_ts
-      m = ""
-      for (t in mitre) m = (m == "" ? t : m "," t)
-      if (m != "") printf "MITRE\t%s\t-\n", m
+      if (first_ts != "") printf "FIRSTTS\t%s\t-\n", bl_tsv(first_ts)
+      if (last_ts != "") printf "LASTTS\t%s\t-\n", bl_tsv(last_ts)
+      for (t in mitre) printf "MITRE\t%s\n", t
       for (x in agents) printf "AGENT\t%d\t%s\n", agents[x], bl_tsv(x)
       for (x in rules) printf "RULE\t%d\t%s\n", rules[x], bl_tsv(x)
       for (x in srcips) printf "SRCIP\t%d\t%s\n", srcips[x], x
     }
-  ' "$file")
+  ')
 
-  local total=0 crit=0 high=0 mid=0 low=0 max_level=0 worst=""
+  local total=0 skipped=0 crit=0 high=0 mid=0 low=0 max_level=0 worst=""
   local first_ts="" last_ts="" mitre=""
   while IFS=$'\t' read -r kind a b; do
     case "$kind" in
       TOTAL) total=$a ;;
+      SKIPPED) skipped=$a ;;
       CRIT) crit=$a ;;
       HIGH) high=$a ;;
       MID) mid=$a ;;
@@ -156,11 +92,11 @@ wazuh_alerts_analyze() {
       MAXLEVEL) max_level=$a; worst=$b ;;
       FIRSTTS) first_ts=$a ;;
       LASTTS) last_ts=$a ;;
-      MITRE) mitre=$a ;;
     esac
-  done < <(printf '%s\n' "$raw" | grep -Ev '^(AGENT|RULE|SRCIP)' || true)
+  done < <(printf '%s\n' "$raw" | grep -Ev '^(AGENT|RULE|SRCIP|MITRE)' || true)
 
   report_metric "total_alerts" "$total"
+  if [ "$skipped" -gt 0 ]; then report_metric "unparsed_lines" "$skipped"; fi
   report_metric "level_12_plus" "$crit"
   report_metric "level_8_to_11" "$high"
   report_metric "level_4_to_7" "$mid"
@@ -169,6 +105,7 @@ wazuh_alerts_analyze() {
   if [ -n "$first_ts" ]; then
     report_metric "time_span" "$first_ts -> $last_ts"
   fi
+  mitre=$(printf '%s\n' "$raw" | awk -F'\t' '$1 == "MITRE" { print $2 }' | sort | paste -sd, -)
   if [ -n "$mitre" ]; then
     report_metric "mitre_techniques" "$mitre"
   fi

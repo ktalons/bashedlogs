@@ -12,267 +12,277 @@
 
 register_format auth_ssh "SSH/PAM auth logs (sshd, brute force windows, compromise heuristic)"
 
+# *--- Shared Record Parsing ---*
+
+# shellcheck disable=SC2034  # interpolated into the analyzer and detector
+SSH_RECORD_AWK='
+function ssh_name(s) { return s ~ /^(sshd(-session|-auth)?|openssh-server)$/ }
+
+function ssh_prefix(s,    size) {
+  while (length(s) != size) {
+    size = length(s)
+    sub(/^[ \t]+/, "", s)
+    sub(/^\[ID [0-9]+ [a-z0-9]+\.[a-z]+\] /, "", s)
+    sub(/^message repeated [0-9]+ times: \[ /, "", s)
+  }
+  if (index(s, BOM) == 1) s = substr(s, length(BOM) + 1)
+  return s
+}
+
+# Escaped quotes and brackets within an RFC 5424 parameter cannot end the
+# structured data or begin the message.
+function ssh_rfc5424_msg(s,    i, c, quoted) {
+  if (s ~ /^- /) return substr(s, 3)
+  if (substr(s, 1, 1) != "[") return ""
+  for (i = 2; i <= length(s); i++) {
+    c = substr(s, i, 1)
+    if (quoted && c == "\\") { i++; continue }
+    if (c == "\"") quoted = !quoted
+    if (!quoted && c == "]") {
+      if (substr(s, i + 1, 1) == " ") return substr(s, i + 2)
+      if (substr(s, i + 1, 1) != "[") return ""
+      i++
+    }
+  }
+  return ""
+}
+
+function ssh_record(line,    s, h, tag, ts, root, ident, e) {
+  ssh_host = ""; ssh_named = 0; ssh_epoch = -1; ssh_ts = ""
+  sub(/\r$/, "", line)
+  s = line
+  if (s ~ /^[ \t]*\{/) {
+    root = bl_json(s)
+    if (!root) return ""
+    ident = bl_jstr(root, "_COMM")
+    if (ident == "") ident = bl_jstr(root, "SYSLOG_IDENTIFIER")
+    if (ident != "" && !ssh_name(ident)) return ""
+    ssh_named = ssh_name(ident)
+    ssh_host = bl_jstr(root, "_HOSTNAME")
+    ts = bl_jstr(root, "__REALTIME_TIMESTAMP")
+    if (ts ~ /^[0-9]{1,16}$/) ssh_epoch = ts / 1000000
+    ssh_ts = ssh_epoch >= 0 ? sprintf("%.6f", ssh_epoch) : ""
+    return ssh_prefix(bl_jstr(root, "MESSAGE"))
+  }
+  if (s ~ /^[ \t]*MESSAGE=/) {
+    sub(/^[ \t]*MESSAGE=/, "", s)
+    return ssh_prefix(s)
+  }
+  if (match(s, /^<[0-9]{1,3}>[1-9][0-9]{0,2} [^ ]+ [^ ]+ [^ ]+ [^ ]+ [^ ]+ /)) {
+    split(substr(s, 1, RLENGTH), h, " ")
+    s = substr(s, RLENGTH + 1)
+    ssh_named = ssh_name(h[4])
+    ssh_host = h[3] == "-" ? "" : h[3]
+    ssh_ts = h[2] == "-" ? "" : h[2]
+    ssh_epoch = bl_iso_epoch(h[2])
+    return ssh_prefix(ssh_rfc5424_msg(s))
+  }
+  sub(/^<[0-9]{1,3}>/, "", s)
+  if (match(s, /^[A-Z][a-z]{2} +[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}[ \t]+/)) {
+    ssh_ts = substr(s, 1, RLENGTH - 1)
+    split(ssh_ts, h, " ")
+    s = substr(s, RLENGTH + 1)
+    e = bl_syslog_epoch(h[1], h[2], h[3], YEAR + year_wrap)
+    if (e >= 0 && prev_e > 0 && e + 15552000 < prev_e) {
+      year_wrap++
+      e = bl_syslog_epoch(h[1], h[2], h[3], YEAR + year_wrap)
+    }
+    if (e >= 0) prev_e = e
+    ssh_epoch = e
+  } else if (match(s, /^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][^ \t]+[ \t]+/)) {
+    ssh_ts = substr(s, 1, RLENGTH - 1)
+    sub(/[ \t]+$/, "", ssh_ts)
+    s = substr(s, RLENGTH + 1)
+    ssh_epoch = bl_iso_epoch(ssh_ts)
+  } else return ssh_prefix(s)
+
+  # A syslog exporter can omit the hostname. Use the tag after the timestamp
+  # or after the hostname, then keep the full message at that boundary.
+  if (s !~ /^[^ \t]+(\]:|:[ \t])/ && match(s, /^[^ \t]+[ \t]+/)) {
+    ssh_host = substr(s, 1, RLENGTH)
+    sub(/[ \t]+$/, "", ssh_host)
+    s = substr(s, RLENGTH + 1)
+  }
+  if (match(s, /^[^ \t:\[]+(\[[0-9]+(:[0-9]+)?\]:?|:)/)) {
+    tag = substr(s, 1, RLENGTH)
+    sub(/[\[:].*$/, "", tag)
+    ssh_named = ssh_name(tag)
+    s = substr(s, RLENGTH + 1)
+  } else return ""
+  return ssh_prefix(s)
+}
+
+function ssh_event(s) {
+  return s ~ /^(Failed |Accepted |Invalid user |pam_unix\(sshd(-session|-auth)?:)/
+}
+'
+
 # *--- Detection ---*
 
 auth_ssh_detect() {
-  local hits
-  hits=$(printf '%s\n' "$SAMPLE" | grep -cE 'sshd\[[0-9]+\]:|pam_unix\(sshd' || true)
-  if [ "$hits" -ge 3 ]; then
-    echo 95
-  elif [ "$hits" -ge 1 ]; then
-    echo 70
-  else
-    echo 0
-  fi
+  # Journal JSON gets its own analyzer. For SSH correlation on that export,
+  # select the auth analyzer explicitly.
+  printf '%s\n' "$SAMPLE" | awk -v YEAR=2000 -v BOM=$'\357\273\277' \
+    "$AWK_TIME_LIB$AWK_JSON_LIB$SSH_RECORD_AWK"'
+    /^[ \t]*\{/ { next }
+    {
+      if (ssh_event(ssh_record($0))) hits++
+      if (ssh_named) {
+        named++
+        if ($0 !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/) named_non_iso++
+      }
+    }
+    END { print (named >= 3 ? 95 : named_non_iso ? 80 : hits >= 3 ? 85 : hits ? 65 : 0) }
+  '
 }
 
 # *--- Analysis ---*
 
-# NOTE: Counting one attempt exactly once is the whole ballgame here.
-#   - Debian/Ubuntu sshd logs BOTH `pam_unix(sshd:auth): authentication
-#     failure` and `Failed password` for a single failed attempt. Counting both
-#     doubled every figure and halved the effective --bf-threshold, so three
-#     attempts could raise a "12 failures" alert. sshd's own `Failed <method>`
-#     line is authoritative; the PAM line is only used as the failure stream
-#     when a log contains no sshd failure lines at all (filtered exports).
-#   - `Invalid user` preambles are enumeration signal, not separate failures.
-#   - `Failed publickey`/`Failed none` are routine negotiation noise, counted
-#     as probes rather than credential attempts.
-#
-# SECURITY: sshd logs the username a client sends, and the text of a client
-# disconnect, verbatim and with spaces. A username of `x from 198.51.100.7`
-# used to put that address on the brute force, and a later real login from it
-# read as a possible compromise. Failures, accepts, and their addresses are
-# now read only from sshd's own message, which starts after the program tag
-# (or the journald MESSAGE key) and must start with the event's words:
-#   - A failure takes the address after the LAST `from`. The username comes
-#     before sshd's own `from <ip> port <n>`, so it cannot follow it.
-#   - An accept takes the FIRST `from`. A certificate key ID comes after it.
-#   - PAM takes `rhost=` only, which precedes `user=`.
-#   - Event words quoted inside another message are not sshd's. The test is
-#     position, not the name: a tag with other text between it and the words
-#     means the words belong to that other program, while a tag that reads
-#     differently but is followed straight by the words is still sshd. Relays,
-#     rsyslog templates and container runtimes all rewrite the tag, and
-#     requiring it to name ssh made a containerized sshd report no failures.
-# With no tag (journalctl -o cat, RFC 5424, Windows), the message starts at the
-# earliest word sshd opens a message with. Every message that carries client
-# text opens with one of those words, so client text always comes after it.
-#
-# WARN: attribution is trusted, not proved. Reading by position rather than by
-# name means any program whose message opens with sshd words is read as sshd,
-# so an app that logs attacker text at the start of its own message, into the
-# same file, can invent a burst against a machine that never connected. The
-# reverse rule hides a real burst behind a rewritten tag, which is worse for a
-# detector, and no text-only rule separates the two: once the tag is rewritten
-# the line no longer carries what wrote it. Three more cases are open. A
-# journald `MESSAGE=` record is read whatever its SYSLOG_IDENTIFIER says; a tag
-# holding a character outside the TAG class is not seen as a tag at all, so the
-# line falls through untested; and an accept takes the first `from`, so an
-# account that exists and whose name contains ` from <ip> port <n>`
-# re-attributes its own login. Closing them needs the report to disclose how
-# each line was attributed instead of assuming it.
+# Text logs can lose the original program name in a relay. Position-based
+# events still contribute to metrics and brute-force findings. A successful
+# login warning requires a recognized producer and an unambiguous peer.
 auth_ssh_analyze() {
   local file=$1
-  local assume_year="${BASHEDLOGS_ASSUME_YEAR:-$(date +%Y)}"
-  local raw events kind a b c
+  local assume_year raw events kind a b c
+  assume_year=$(date +%Y)
+  assume_year=${BASHEDLOGS_ASSUME_YEAR:-$assume_year}
+  if [[ ! $assume_year =~ ^[0-9]{4}$ ]] || (( 10#$assume_year < 1970 )); then
+    die_usage "BASHEDLOGS_ASSUME_YEAR needs a year from 1970 to 9999"
+  fi
 
-  # Pass 1: classify events, extract validated IPs/users, stamp epochs.
-  # NOTE: an RFC 5424 message may start with a UTF-8 BOM, which glues it to
-  # the first word. It is passed in as bytes; awk %c is not portable past 127.
-  raw=$(awk -v YEAR="$assume_year" -v BOM=$'\357\273\277' "$AWK_IP_LIB$AWK_TIME_LIB"'
-    BEGIN {
-      # Words sshd opens a message with, after a boundary. The last two catch
-      # other message shapes that carry client text: foo_bar: and sftp verbs.
-      OPENER = "([ \t\"=:]|\\[)(Failed |Accepted |Invalid user |Illegal user " \
-        "|Postponed |Partial |pam_[a-z_]+\\(|PAM [0-9]|Connection |Disconnected " \
-        "|Disconnecting |Received |Did not receive|User |error: |fatal: " \
-        "|banner exchange|Bad protocol|Protocol major|Unable to negotiate" \
-        "|reverse mapping|Address |Nasty PTR|refused connect|message repeated " \
-        "|Starting session|Close session|Timeout before|drop connection" \
-        "|subsystem request|debug[0-9]: |[a-z][a-z0-9]*_[a-z0-9_]*: " \
-        "|[a-z][a-z-]* ((name|old) )?\")"
-      # A program tag: sshd[123]:, sshd:, or the macOS compact sshd[123:456].
-      # Only the [pid] forms are unambiguous on their own; a bare name: needs
-      # whitespace after it, or a timestamp such as 2025-06-01T10: reads as one.
-      TAG = "[ \t][A-Za-z0-9_./-]+(\\[[0-9]+\\]:|(\\[[0-9]+:[0-9]+\\]|:)[ \t])"
-    }
-    # A JSON string value up to its closing quote, stepping over \\ and \"
-    # the way web_access does.
-    function json_value(s,    m, k) {
-      m = s
-      gsub(/\\\\/, "__", m)
-      gsub(/\\"/, "__", m)
-      k = index(m, "\"")
-      return (k > 0) ? substr(s, 1, k - 1) : s
-    }
-    # Solaris message IDs and rsyslog repeat wrappers sit before the event.
-    function strip_prefix(b,   n) {
-      # Relays re-stamp a line that already carries a Solaris ID, and a repeat
-      # wrapper can sit on either side of one, so these stack in any order.
-      # Strip until nothing more comes off: one pass each left the second copy
-      # in place, and the event matchers need the words at the front.
-      while (length(b) != n) {
-        n = length(b)
-        sub(/^[ \t]+/, "", b)
-        sub(/^\[ID [0-9]+ [a-z0-9]+\.[a-z]+\] /, "", b)
-        sub(/^message repeated [0-9]+ times: \[ /, "", b)
-      }
-      return b
-    }
-    # sshd message text of the current line, or "" when it is not sshd.
-    # Strings are padded with a space so a boundary never needs ^ or $.
-    function msg_body(    s, k, p, pre, e, gap) {
-      s = $0
-      if (s ~ /^[ \t]*MESSAGE=/) {
-        sub(/^[ \t]*MESSAGE=/, "", s)
-        return strip_prefix(s)
-      }
-      if (s ~ /^[ \t]*"MESSAGE" : "/) {
-        sub(/^[ \t]*"MESSAGE" : "/, "", s)
-        return strip_prefix(json_value(s))
-      }
-      # Only on a JSON line: sshd writes a username quote as a raw quote.
-      if (s ~ /^[ \t]*\{/ && match(s, /[{,]"MESSAGE":"/))
-        return strip_prefix(json_value(substr(s, RSTART + RLENGTH)))
-      if (BOM != "" && (k = index(s, BOM)) > 0)
-        s = substr(s, 1, k - 1) " " substr(s, k + length(BOM))
-      if (!match(" " s, OPENER)) return ""
-      p = RSTART
-      pre = substr(s, 1, p - 1)
-      if (match(" " pre " ", TAG)) {
-        e = RSTART + RLENGTH - 1
-        # What sits between the tag and the first word of the event decides.
-        # Nothing there means the message came from sshd however the tag reads,
-        # because relays, container runtimes and rsyslog templates all rewrite
-        # the tag (the Docker syslog driver uses the container id). Other text
-        # there means the words are quoted inside some other message.
-        gap = (p > e) ? substr(s, e, p - e) : ""
-        if (tolower(substr(" " pre " ", RSTART, RLENGTH)) !~ /ssh/ &&
-            strip_prefix(gap) != "")
-          return ""
-        return strip_prefix(substr(s, (e < p) ? e : p))
-      }
-      return strip_prefix(substr(s, p))
-    }
-    # Address after the last (or first) "from" token of the message.
-    function from_ip(last,    i, tok) {
-      tok = ""
-      for (i = 1; i < bn; i++) {
-        if (bt[i] == "from") {
-          tok = bt[i + 1]
-          if (!last) break
+  # shellcheck disable=SC2016  # quoted awk program
+  raw=$(awk_log "$file" -v YEAR="$assume_year" -v BOM=$'\357\273\277' \
+    -v NAMED_ONLY="$SSH_NAMED_ONLY" "$AWK_IP_LIB$AWK_TIME_LIB$AWK_JSON_LIB$SSH_RECORD_AWK"'
+    # An accepted login with two valid peer clauses is ambiguous. A username
+    # or certificate key ID can contain an entire lookalike clause.
+    function peer(s, last,    rest, fields, tok, count, pos, len, chosen) {
+      rest = s
+      peer_user = ""
+      while (match(rest, / from [^ \t]+ port [0-9]+ ssh[12]([: \t\]]|$)/)) {
+        pos = RSTART; len = RLENGTH
+        split(substr(rest, pos + 1, len - 1), fields, " ")
+        tok = bl_normal_ip(fields[2])
+        if (tok != "" && fields[4] + 0 <= 65535) {
+          count++
+          chosen = tok
+          if (count == 1 || last) {
+            peer_user = substr(s, 1, length(s) - length(rest) + pos - 1)
+            sub(/^[^ ]+ [^ ]+ for (invalid user )?/, "", peer_user)
+          }
         }
+        rest = substr(rest, pos + len - 1)
       }
-      tok = bl_clean_ip(tok)
-      return bl_valid_ip(tok) ? tok : ""
+      return count && (last || count == 1) ? chosen : ""
     }
-    function rhost_ip(    i, tok) {
-      for (i = 1; i <= bn; i++) {
-        if (bt[i] ~ /^rhost=/) {
-          tok = bl_clean_ip(substr(bt[i], 7))
-          return bl_valid_ip(tok) ? tok : ""
-        }
-      }
-      return ""
+
+    function ssh_ev(kind, stream, user) {
+      if (ssh_epoch < 0) { unparsed_time++; return }
+      printf "EV\t%s\t%.6f\t%d\t%s\t%s\t%s\t%d\t%s\n",
+        stream, ssh_epoch, NR, kind, ip, host, ssh_named, bl_tsv(user)
     }
-    function body_user(    i) {
-      for (i = 1; i < bn; i++) {
-        if (bt[i] == "for" && bt[i + 1] == "invalid" && bt[i + 2] == "user") return bt[i + 3]
-        if (bt[i] == "for" && bt[i + 1] != "invalid") return bt[i + 1]
-        if (bt[i] == "user" && bt[i - 1] == "Invalid") return bt[i + 1]
-      }
-      return ""
-    }
-    function line_epoch(    e) {
-      e = bl_syslog_epoch($1, $2, $3, YEAR + year_wrap)
-      if (e < 0) {
-        # journald short-iso exports of sshd logs carry ISO timestamps
-        e = bl_iso_epoch($1)
-        # RFC 5424 puts its timestamp after the priority and version, so the
-        # first field never parses. Without this a burst in a 5424 log counts
-        # in the metrics and alerts on nothing, since every time-window finding
-        # needs an epoch. Guarded on the 5424 opener so no other shape is read
-        # this way.
-        if (e < 0 && $0 ~ /^<[0-9]+>[0-9]+ /) e = bl_iso_epoch($2)
-        if (e > 0) prev_e = e
-        return e
-      }
-      # year rollover inside one file: a >180-day backwards jump means Jan
-      if (prev_e > 0 && e + 15552000 < prev_e) {
-        year_wrap++
-        e = bl_syslog_epoch($1, $2, $3, YEAR + year_wrap)
-      }
-      if (e > 0) prev_e = e
-      return e
-    }
+
     {
       total++
-      if (first_ts == "") first_ts = $1 " " $2 " " $3
-      last_ts = $1 " " $2 " " $3
-      e = line_epoch()
-      body = msg_body()
-      bn = split(body, bt, " ")
+      body = ssh_record($0)
+      if (ssh_ts != "") {
+        if (first_ts == "") first_ts = bl_tsv(ssh_ts)
+        last_ts = bl_tsv(ssh_ts)
+      }
+      if (NAMED_ONLY && !ssh_named) next
+      host = bl_tsv(tolower(ssh_host))
+      gsub(SUBSEP, " ", host)
+      if (ssh_event(body)) {
+        if (ssh_named) named_events++
+        else position_events++
+      }
 
-      # sshd credential failures: authoritative, one line per real attempt.
-      if (body ~ /^Failed (password|keyboard-interactive)/) {
-        sshd_fail++
-        if (body ~ /^Failed [^ ]+ for (invalid user )?root /) sshd_root++
-        ip = from_ip(1)
-        if (ip != "") {
-          sshd_fail_ip[ip]++
-          user = body_user()
-          if (user != "" && user != "invalid") sshd_fail_user[user]++
-          if (e > 0) printf "EV\tsshd\t%d\tfail\t%s\n", e, ip
-        }
+      if (body ~ /^Failed (password|keyboard-interactive[^ ]*) for /) {
+        failures["sshd", host]++
+        native_host[host] = 1
+        ip = peer(body, 1)
+        if (ip == "") { unparsed_peer++; next }
+        split(peer_user, users, " ")
+        user = users[1]
+        if (peer_user == "root") roots["sshd", host]++
+        failure_ips["sshd", host, ip]++
+        if (user != "" && user != "invalid") failure_users["sshd", host, user]++
+        ssh_ev("fail", "sshd", "")
         next
       }
-      # PAM view of the same attempt. Tracked separately and only promoted to
-      # the failure stream when the log has no sshd failure lines at all.
-      if (body ~ /^pam_unix\(sshd:auth\): authentication failure/) {
-        pam_fail++
-        if (body ~ /user=root($| )/) pam_root++
-        ip = rhost_ip()
-        if (ip != "") {
-          pam_fail_ip[ip]++
-          user = body_user()
-          if (user != "" && user != "invalid") pam_fail_user[user]++
-          if (e > 0) printf "EV\tpam\t%d\tfail\t%s\n", e, ip
+      if (body ~ /^pam_unix\(sshd(-session|-auth)?:auth\): authentication failure/) {
+        failures["pam", host]++
+        # Read the first real rhost field before looking at user content.
+        ip = ""; user = ""
+        if (match(body, / rhost=[^ \t]*/)) {
+          user = substr(body, RSTART + RLENGTH)
+          if (user !~ /^[ \t]+user=/) user = ""
+          else sub(/^[ \t]+user=/, "", user)
+          ip = bl_normal_ip(substr(body, RSTART + 7, RLENGTH - 7))
+          if (user == "root") roots["pam", host]++
         }
+        if (ip == "") { unparsed_peer++; next }
+        failure_ips["pam", host, ip]++
+        if (user != "") {
+          split(user, users, " ")
+          failure_users["pam", host, users[1]]++
+        }
+        ssh_ev("fail", "pam", "")
         next
       }
       if (body ~ /^Invalid user /) {
         invalid++
-        user = body_user()
-        if (user != "") enum_user[user] = 1
+        split(body, users, " ")
+        if (users[3] != "") enum_user[users[3]] = 1
         next
       }
-      if (body ~ /^Accepted (password|publickey|keyboard-interactive)/) {
+      if (body ~ /^Accepted (password|publickey|keyboard-interactive[^ ]*) for /) {
         accepted++
-        user = body_user()
-        if (body ~ /^Accepted password for root /) root_pw_login++
-        ip = from_ip(0)
-        if (ip != "" && e > 0) printf "EV\tboth\t%d\taccept\t%s\t%s\n", e, ip, user
+        ip = peer(body, 0)
+        if (ip == "") { unparsed_peer++; next }
+        if (ssh_named && body ~ /^Accepted password / && peer_user == "root") root_pw_login++
+        if (ssh_named) ssh_ev("accept", "both", peer_user)
         next
       }
-      if ($0 ~ /Failed (publickey|none)/) { probes++; next }
-      if ($0 ~ /Did not receive identification|Connection (closed|reset) by .*preauth|Received disconnect/) {
-        probes++
-        next
-      }
-      if ($0 ~ /session opened/) { sess_open++; next }
-      if ($0 ~ /session closed/) { sess_close++; next }
+      if (body ~ /^Failed (publickey|none) |^Did not receive identification|^Connection (closed|reset) by .*preauth|^Received disconnect/) probes++
+      if (body ~ /^pam_unix\(sshd(-session|-auth)?:session\): session opened/) sess_open++
+      if (body ~ /^pam_unix\(sshd(-session|-auth)?:session\): session closed/) sess_close++
     }
     END {
-      # sshd lines win when present; PAM lines are the fallback stream.
-      use_pam = (sshd_fail == 0 && pam_fail > 0)
-      printf "SOURCE\t%s\n", (use_pam ? "pam" : "sshd")
+      # Choose native failures independently per host, so a native record
+      # from one machine cannot erase a PAM-only stream from another.
+      for (h in native_host) printf "NATIVE\t%s\n", h
+      for (key in failures) {
+        split(key, parts, SUBSEP)
+        if (parts[1] == "pam" && parts[2] in native_host) {
+          pam_dupes += failures[key]
+        } else {
+          source[parts[1]] = 1
+          failed += failures[key]
+          root_attempts += roots[key]
+        }
+      }
+      for (key in failure_ips) {
+        split(key, parts, SUBSEP)
+        if (parts[1] != "pam" || !(parts[2] in native_host))
+          by_ip[parts[3]] += failure_ips[key]
+      }
+      for (key in failure_users) {
+        split(key, parts, SUBSEP)
+        if (parts[1] != "pam" || !(parts[2] in native_host))
+          by_user[parts[3]] += failure_users[key]
+      }
+      stream = ("pam" in source) ? (("sshd" in source) ? "mixed" : "pam") : "sshd"
+      printf "SOURCE\t%s\n", stream
       printf "TOTAL\t%d\n", total
-      printf "FAILED\t%d\n", (use_pam ? pam_fail : sshd_fail)
-      printf "PAMDUPES\t%d\n", (use_pam ? 0 : pam_fail)
+      printf "NAMED\t%d\n", named_events
+      printf "POSITION\t%d\n", position_events
+      printf "NOTIME\t%d\n", unparsed_time
+      printf "NOPEER\t%d\n", unparsed_peer
+      printf "FAILED\t%d\n", failed
+      printf "PAMDUPES\t%d\n", pam_dupes
       printf "INVALID\t%d\n", invalid
       printf "ACCEPTED\t%d\n", accepted
-      printf "ROOTATT\t%d\n", (use_pam ? pam_root : sshd_root)
+      printf "ROOTATT\t%d\n", root_attempts
       printf "ROOTPW\t%d\n", root_pw_login
       printf "PROBES\t%d\n", probes
       printf "SESSOPEN\t%d\n", sess_open
@@ -281,24 +291,24 @@ auth_ssh_analyze() {
       printf "LASTTS\t%s\n", last_ts
       n = 0; for (u in enum_user) n++
       printf "ENUMUSERS\t%d\n", n
-      if (use_pam) {
-        for (ipx in pam_fail_ip) printf "FIP\t%d\t%s\n", pam_fail_ip[ipx], ipx
-        for (u in pam_fail_user) printf "FUSER\t%d\t%s\n", pam_fail_user[u], bl_tsv(u)
-      } else {
-        for (ipx in sshd_fail_ip) printf "FIP\t%d\t%s\n", sshd_fail_ip[ipx], ipx
-        for (u in sshd_fail_user) printf "FUSER\t%d\t%s\n", sshd_fail_user[u], bl_tsv(u)
-      }
+      for (x in by_ip) printf "FIP\t%d\t%s\n", by_ip[x], x
+      for (x in by_user) printf "FUSER\t%d\t%s\n", by_user[x], bl_tsv(x)
     }
-  ' "$file")
+  ')
 
   local total=0 failed=0 invalid=0 accepted=0 root_attempts=0 root_pw=0
   local probes=0 sess_open=0 sess_close=0 enum_users=0 first_ts="" last_ts=""
   local source="sshd" pam_dupes=0
+  local named=0 position=0 no_time=0 no_peer=0
   while IFS=$'\t' read -r kind a b; do
     case "$kind" in
       SOURCE) source=$a ;;
       PAMDUPES) pam_dupes=$a ;;
       TOTAL) total=$a ;;
+      NAMED) named=$a ;;
+      POSITION) position=$a ;;
+      NOPEER) no_peer=$a ;;
+      NOTIME) no_time=$a ;;
       FAILED) failed=$a ;;
       INVALID) invalid=$a ;;
       ACCEPTED) accepted=$a ;;
@@ -311,46 +321,53 @@ auth_ssh_analyze() {
       FIRSTTS) first_ts=$a ;;
       LASTTS) last_ts=$a ;;
     esac
-  done < <(printf '%s\n' "$raw" | grep -Ev '^(EV|FIP|FUSER)' || true)
+  done < <(printf '%s\n' "$raw" | grep -Ev '^(EV|FIP|FUSER|NATIVE)' || true)
 
   # Pass 2: per-IP sliding window over the time-sorted failure stream, plus
   # the compromise heuristic (an accept from the same IP soon after a burst).
   # Only events from the authoritative source feed the window, so a log that
   # carries both sshd and PAM lines for one attempt cannot double-count.
-  # Fields: EV <source> <epoch> <kind> <ip> [user]
-  events=$(printf '%s\n' "$raw" | grep '^EV' \
-    | awk -F'\t' -v src="$source" '$2 == src || $2 == "both"' \
-    | sort -t "$(printf '\t')" -k3,3n || true)
+  # Fields: EV <source> <epoch> <line> <kind> <ip> <host> <named> [user]
+  events=$(printf '%s\n' "$raw" | awk -F'\t' '$1 == "EV" || $1 == "NATIVE"' \
+    | sort -t "$(printf '\t')" -k1,1r -k3,3n -k4,4n)
   local windows=""
   if [ -n "$events" ]; then
     windows=$(printf '%s\n' "$events" | awk -F'\t' \
       -v W="$BF_WINDOW" -v T="$BF_THRESHOLD" '
-      $4 == "fail" {
-        t = $3 + 0; ip = $5
-        q[ip, ++tail[ip]] = t
-        while (head[ip] < tail[ip] && q[ip, head[ip] + 1] <= t - W) head[ip]++
-        size = tail[ip] - head[ip]
-        if (size >= T) {
-          if (size > burst_n[ip]) {
-            burst_n[ip] = size
-            burst_start[ip] = q[ip, head[ip] + 1]
-            burst_end[ip] = t
-          }
-          last_burst[ip] = t
+      $1 == "NATIVE" { native[$2] = 1; next }
+      $5 == "fail" {
+        if ($2 == "pam" && $7 in native) next
+        t = $3 + 0
+        k = $6 SUBSEP $7
+        ip[k] = $6; host[k] = $7
+        idx = ++tail[k]
+        q[k, idx] = t
+        named[k, idx] = $8 + 0
+        named_count[k] += named[k, idx]
+        while (head[k] < tail[k] && q[k, head[k] + 1] <= t - W) {
+          idx = ++head[k]
+          named_count[k] -= named[k, idx]
+          delete q[k, idx]
+          delete named[k, idx]
         }
+        size = tail[k] - head[k]
+        if (size >= T && size > burst_n[k]) {
+          burst_n[k] = size
+          burst_span[k] = t - q[k, head[k] + 1]
+          burst_named[k] = named_count[k]
+        }
+        if ($8 && named_count[k] >= T) named_burst[k] = t
       }
-      $4 == "accept" {
-        t = $3 + 0; ip = $5; user = $6
-        if ((ip in last_burst) && t >= last_burst[ip] && t - last_burst[ip] <= 600) {
-          comp_user[ip] = user
-          comp_t[ip] = t
-        }
+      $5 == "accept" {
+        t = $3 + 0
+        k = $6 SUBSEP $7
+        if ((k in named_burst) && t - named_burst[k] <= 600) comp_user[k] = $9
       }
       END {
-        for (ip in burst_n)
-          printf "BURST\t%d\t%s\t%d\n", burst_n[ip], ip, burst_end[ip] - burst_start[ip]
-        for (ip in comp_user)
-          printf "COMPROMISE\t%s\t%s\n", ip, comp_user[ip]
+        for (k in burst_n)
+          printf "BURST\t%d\t%s\t%.6f\t%d\t%s\n", burst_n[k], ip[k], burst_span[k], burst_named[k], host[k]
+        for (k in comp_user)
+          printf "COMPROMISE\t%s\t%s\t%s\n", ip[k], comp_user[k], host[k]
       }
     ' | sort -t "$(printf '\t')" -k1,1r -k2,2rn -k3,3)
   fi
@@ -363,6 +380,10 @@ auth_ssh_analyze() {
   fi
   report_metric "invalid_user_lines" "$invalid"
   report_metric "accepted_logins" "$accepted"
+  report_metric "named_ssh_events" "$named"
+  report_metric "position_only_ssh_events" "$position"
+  if [ "$no_time" -gt 0 ]; then report_metric "ssh_events_without_time" "$no_time"; fi
+  if [ "$no_peer" -gt 0 ]; then report_metric "ssh_events_without_peer" "$no_peer"; fi
   report_metric "sessions_opened" "$sess_open"
   report_metric "sessions_closed" "$sess_close"
   report_metric "probes_preauth" "$probes"
@@ -372,10 +393,8 @@ auth_ssh_analyze() {
 
   # Top attacking IPs (count desc, IP asc), max 5, from validated counts.
   local top=""
-  local shown=0
   while IFS=$'\t' read -r kind a b; do
     if [ -z "$kind" ]; then continue; fi
-    shown=$((shown + 1))
     if [ -n "$top" ]; then top="$top, "; fi
     top="$top$b ($a)"
   done < <(printf '%s\n' "$raw" | grep '^FIP' | sort -t "$(printf '\t')" -k2,2rn -k3,3 | head -5 || true)
@@ -384,7 +403,6 @@ auth_ssh_analyze() {
   fi
 
   local tusers=""
-  shown=0
   while IFS=$'\t' read -r kind a b; do
     if [ -z "$kind" ]; then continue; fi
     if [ -n "$tusers" ]; then tusers="$tusers, "; fi
@@ -396,17 +414,20 @@ auth_ssh_analyze() {
 
   # Findings, worst first: compromise heuristic, bursts, root activity, noise.
   if [ -n "$windows" ]; then
-    while IFS=$'\t' read -r kind a b c; do
+    local d host span
+    while IFS=$'\t' read -r kind a b c d host; do
       case "$kind" in
         COMPROMISE)
           report_add critical possible-compromise \
-            "successful login for '$b' from $a shortly after a brute-force burst from the same IP" \
-            "ip=$a" "user=$b"
+            "successful login for '$b' from $a shortly after an SSH brute-force burst on the same host" \
+            "ip=$a" "user=$b" "host=$c"
           ;;
         BURST)
+          span=${c%"${c##*[!0]}"}
+          span=${span%.}
           report_add high brute-force \
-            "$a failed logins from $b within ${c}s (threshold: $BF_THRESHOLD in ${BF_WINDOW}s)" \
-            "ip=$b" "count=$a" "burst_seconds=$c"
+            "$a failed logins from $b within ${span}s (threshold: $BF_THRESHOLD in ${BF_WINDOW}s)" \
+            "ip=$b" "count=$a" "burst_seconds=$span" "named_events=$d" "host=$host"
           ;;
       esac
     done < <(printf '%s\n' "$windows")

@@ -40,9 +40,9 @@ epoch_of() {
   [ "$output" = "1748772001" ]
 }
 
-@test "space-separated and timezone-suffixed forms parse the same" {
+@test "timezones are applied to explicit offsets" {
   a=$(bash -c "source \"$REPO_ROOT/lib/core/time.sh\" && bl_epoch_of '2025-06-01 10:00:01'")
   b=$(bash -c "source \"$REPO_ROOT/lib/core/time.sh\" && bl_epoch_of '2025-06-01T10:00:01-0700'")
   [ "$a" = "1748772001" ]
-  [ "$b" = "1748772001" ]
+  [ "$b" = "1748797201" ]
 }

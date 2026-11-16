@@ -24,19 +24,22 @@ generic_analyze() {
   local file=$1
   local total=0 errors=0 warns=0 authfail=0 sqli=0 xss=0 trav=0
   local raw kind count value
-  local top_ips="" unique_ips=0 shown=0
+  local top_ips="" unique_ips=0
 
   # Single awk pass. IPs are token-validated (each octet 0-255) instead of
   # substring-matched, so counts cannot be inflated by lookalike text.
-  raw=$(awk "$AWK_IP_LIB"'
+  # shellcheck disable=SC2016  # quoted awk program
+  raw=$(awk_log "$file" "$AWK_IP_LIB"'
     function count_ips(line,   n, toks, i, t) {
-      n = split(line, toks, /[^0-9A-Fa-f.:]+/)
+      n = split(line, toks, /[^A-Za-z0-9._:%\/-]+/)
       for (i = 1; i <= n; i++) {
-        t = bl_clean_ip(toks[i])
+        t = toks[i]
+        sub(/\.+$/, "", t)
+        t = bl_normal_ip(t)
         if (t == "") continue
         # only count IPv6 tokens that actually look like addresses, so hex ids
         # and timestamps do not get mistaken for hosts
-        if (bl_valid_ip4(t) || (t ~ /:/ && bl_valid_ip6(t))) ips[t]++
+        ips[t]++
       }
     }
     {
@@ -60,7 +63,7 @@ generic_analyze() {
       printf "TRAV\t%d\t-\n", trav
       for (ip in ips) printf "IPROW\t%d\t%s\n", ips[ip], ip
     }
-  ' "$file")
+  ')
 
   while IFS=$'\t' read -r kind count value; do
     case "$kind" in
@@ -79,7 +82,6 @@ generic_analyze() {
   # Top talkers: count desc, then IP asc for deterministic ties.
   while IFS=$'\t' read -r kind count value; do
     if [ -z "$kind" ]; then continue; fi
-    shown=$((shown + 1))
     if [ -n "$top_ips" ]; then top_ips="$top_ips, "; fi
     top_ips="$top_ips$value ($count)"
   done < <(printf '%s\n' "$raw" | grep '^IPROW' | sort -t "$(printf '\t')" -k2,2rn -k3,3 | head -5 || true)

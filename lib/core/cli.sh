@@ -22,6 +22,7 @@ STRICT=0
 FAIL_LEVEL=""
 BF_THRESHOLD=10
 BF_WINDOW=60
+SSH_NAMED_ONLY=0
 DO_IOCS=0
 DEFANG=0
 ENRICH_ONLINE=0
@@ -46,6 +47,7 @@ Options:
       --fail-level LVL  exit 3 when findings reach LVL (low|medium|high|critical)
       --bf-threshold N  brute-force window: alert at N failures (default 10)
       --bf-window SEC   brute-force sliding window in seconds (default 60)
+      --ssh-named-only  count SSH events from recognized SSH producers only
       --iocs            extract IOCs (IPs, domains, URLs, hashes)
       --defang          defang IOC output (203[.]0[.]113[.]66, hxxp://)
       --mmdb-dir DIR    GeoLite2 .mmdb directory for offline GeoIP/ASN
@@ -55,6 +57,7 @@ Options:
       --no-color        disable colors (NO_COLOR env is also honored)
       --version         print version and exit
   -h, --help            show this help
+      --                end options before an input filename beginning with -
 
 Exit codes: 0 ok, 1 error, 2 unreadable input or strict-detection failure,
 3 findings at/above --fail-level.
@@ -66,13 +69,26 @@ EOF
 # message is shown through pretty_safe, as report values are.
 die_usage() {
   pretty_safe "$1" 2>/dev/null
-  echo "bashedlogs: $PRETTY_SAFE" >&2
+  printf 'bashedlogs: %s\n' "$PRETTY_SAFE" >&2
   echo "Try 'bashedlogs --help'." >&2
   exit 1
 }
 
 require_arg() {
   if [ "$2" -lt 2 ]; then die_usage "$1 needs a value"; fi
+}
+
+positive_integer() {
+  local value=$2
+  case $value in
+    ''|*[!0-9]*) die_usage "$1 needs a positive integer" ;;
+  esac
+  value=${value#"${value%%[!0]*}"}
+  # Stay in the portable signed-int range used by awk printf.
+  if [[ -z $value || ${#value} -gt 10 ]] || (( value > 2147483647 )); then
+    die_usage "$1 needs an integer from 1 to 2147483647"
+  fi
+  printf '%s\n' "$value"
 }
 
 # *--- Argument Parsing ---*
@@ -89,6 +105,9 @@ parse_args() {
         shift 2 ;;
       --format)
         require_arg "$1" "$#"
+        if ! format_registered "$2"; then
+          die_usage "unknown format '$2' (see --list-formats)"
+        fi
         FORMAT_OVERRIDE=$2
         shift 2 ;;
       --list-formats)
@@ -104,18 +123,13 @@ parse_args() {
         shift 2 ;;
       --bf-threshold)
         require_arg "$1" "$#"
-        case "$2" in
-          ''|0|*[!0-9]*) die_usage "--bf-threshold needs a positive integer" ;;
-          *) BF_THRESHOLD=$2 ;;
-        esac
+        BF_THRESHOLD=$(positive_integer "$1" "$2")
         shift 2 ;;
       --bf-window)
         require_arg "$1" "$#"
-        case "$2" in
-          ''|0|*[!0-9]*) die_usage "--bf-window needs a positive integer" ;;
-          *) BF_WINDOW=$2 ;;
-        esac
+        BF_WINDOW=$(positive_integer "$1" "$2")
         shift 2 ;;
+      --ssh-named-only) SSH_NAMED_ONLY=1; shift ;;
       --iocs) DO_IOCS=1; shift ;;
       --defang) DEFANG=1; shift ;;
       --enrich-online) ENRICH_ONLINE=1; shift ;;
@@ -130,6 +144,13 @@ parse_args() {
       -h|--help)
         usage
         exit 0 ;;
+      --)
+        shift
+        if [ "$#" -ne 1 ] || [ -n "$LOGFILE" ]; then
+          die_usage "-- must precede a single input"
+        fi
+        LOGFILE=$1
+        break ;;
       -)
         if [ -n "$LOGFILE" ]; then die_usage "more than one input given"; fi
         LOGFILE="-"
@@ -158,9 +179,17 @@ cleanup_tmp() {
 # temp file. Exits 2 when the input is missing or unreadable.
 prepare_input() {
   if [ "$LOGFILE" = "-" ]; then
-    CLEANUP_FILE=$(mktemp "${TMPDIR:-/tmp}/bashedlogs.XXXXXX")
+    if ! CLEANUP_FILE=$(mktemp "${TMPDIR:-/tmp}/bashedlogs.XXXXXX" 2>/dev/null); then
+      printf 'bashedlogs: could not create temporary input file\n' >&2
+      exit 1
+    fi
     trap cleanup_tmp EXIT
-    cat > "$CLEANUP_FILE"
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if ! { cat > "$CLEANUP_FILE"; } 2>/dev/null; then
+      printf 'bashedlogs: could not spool stdin\n' >&2
+      exit 1
+    fi
     LOGFILE=$CLEANUP_FILE
     DISPLAY_FILE="(stdin)"
   else
@@ -168,8 +197,20 @@ prepare_input() {
   fi
   if [ ! -f "$LOGFILE" ] || [ ! -r "$LOGFILE" ]; then
     pretty_safe "$DISPLAY_FILE" 2>/dev/null
-    echo "bashedlogs: cannot read '$PRETTY_SAFE'" >&2
+    printf "bashedlogs: cannot read '%s'\n" "$PRETTY_SAFE" >&2
     exit 2
+  fi
+}
+
+# SECURITY: awk treats a relative operand such as FS=, as an assignment.
+# Open the input with shell redirection and sanitize failures before printing.
+awk_log() {
+  local file=$1
+  shift
+  if ! { awk "$@" < "$file"; } 2>/dev/null; then
+    pretty_safe "$DISPLAY_FILE" 2>/dev/null
+    printf "bashedlogs: analysis failed while reading '%s'\n" "$PRETTY_SAFE" >&2
+    return 1
   fi
 }
 
@@ -180,17 +221,23 @@ main() {
   init_colors
   prepare_input
 
-  local fmt detected_ok=0
+  local fmt detect_status=0
   if [ -n "$FORMAT_OVERRIDE" ]; then
-    if ! format_registered "$FORMAT_OVERRIDE"; then
-      die_usage "unknown format '$FORMAT_OVERRIDE' (see --list-formats)"
-    fi
     fmt=$FORMAT_OVERRIDE
   else
-    if fmt=$(detect_format "$LOGFILE"); then detected_ok=1; fi
-    if [ "$detected_ok" -eq 0 ] && [ "$STRICT" -eq 1 ]; then
+    fmt=$(detect_format "$LOGFILE") || detect_status=$?
+    if [ "$detect_status" -eq 2 ]; then
       pretty_safe "$DISPLAY_FILE" 2>/dev/null
-      echo "bashedlogs: could not confidently detect the format of '$PRETTY_SAFE' (--strict)" >&2
+      printf "bashedlogs: cannot sample '%s'\n" "$PRETTY_SAFE" >&2
+      exit 2
+    fi
+    if [ "$detect_status" -eq 3 ]; then
+      printf 'bashedlogs: format detector failed\n' >&2
+      exit 1
+    fi
+    if [ "$detect_status" -eq 1 ] && [ "$STRICT" -eq 1 ]; then
+      pretty_safe "$DISPLAY_FILE" 2>/dev/null
+      printf "bashedlogs: could not confidently detect the format of '%s' (--strict)\n" "$PRETTY_SAFE" >&2
       exit 2
     fi
   fi
@@ -203,12 +250,9 @@ main() {
   emit_output "$DISPLAY_FILE" "$fmt"
 
   if [ -n "$FAIL_LEVEL" ]; then
-    local want have
-    want=$(sev_rank "$FAIL_LEVEL")
-    have=$(max_finding_rank)
-    if [ "$have" -ge "$want" ]; then
-      exit 3
-    fi
+    local SEV_RANK
+    severity_values "$FAIL_LEVEL"
+    if [ "$R_MAX_RANK" -ge "$SEV_RANK" ]; then exit 3; fi
   fi
   exit 0
 }

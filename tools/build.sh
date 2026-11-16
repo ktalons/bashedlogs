@@ -9,12 +9,13 @@ set -euo pipefail
 
 # *--- Configuration ---*
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION_OVERRIDE=""
 
-if [ "${1:-}" = "--version" ]; then
-  if [ -z "${2:-}" ]; then
-    echo "build.sh: --version needs a value" >&2
+if [ "$#" -gt 0 ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != "--version" ] ||
+      [[ ! $2 =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?(\+[A-Za-z0-9.-]+)?$ ]]; then
+    printf 'Usage: tools/build.sh [--version X.Y.Z]\n' >&2
     exit 1
   fi
   VERSION_OVERRIDE=$2
@@ -25,6 +26,10 @@ OUT_DIR="$ROOT/dist"
 OUT="$OUT_DIR/bashedlogs"
 
 mkdir -p "$OUT_DIR"
+temp=$(mktemp "$OUT_DIR/.bashedlogs.XXXXXX")
+trap 'rm -f -- "$temp" "$temp.bak"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # *--- Bundle Assembly ---*
 
@@ -39,17 +44,18 @@ mkdir -p "$OUT_DIR"
     sed '/^# shellcheck shell=bash$/d' "$f"
   done
   sed -n '/@BUNDLE-SKIP-END/,$p' "$ENTRY" | sed '1d'
-} > "$OUT"
+} > "$temp"
 
 # *--- Version Override ---*
 
 if [ -n "$VERSION_OVERRIDE" ]; then
-  sed -i.bak "s/^BASHEDLOGS_VERSION=.*/BASHEDLOGS_VERSION=\"$VERSION_OVERRIDE\"/" "$OUT"
-  rm -f "$OUT.bak"
+  sed -i.bak "s/^BASHEDLOGS_VERSION=.*/BASHEDLOGS_VERSION=\"$VERSION_OVERRIDE\"/" "$temp"
+  rm -f -- "$temp.bak"
 fi
 
-# *--- Verify and Report ---*
+# *--- Verify and Publish ---*
 
-chmod +x "$OUT"
-bash -n "$OUT"
+bash -n "$temp"
+chmod 755 "$temp"
+mv -f -- "$temp" "$OUT"
 echo "built $OUT ($(wc -l < "$OUT" | tr -d ' ') lines)"

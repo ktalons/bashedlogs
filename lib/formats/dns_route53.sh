@@ -2,7 +2,7 @@
 # ******************************************************************************
 # *Title: Route53 DNS Query Log Analyzer*
 # *Author: Kyle Versluis (@ktalons)*
-# *Description: Analyzes Route53 resolver logs for NXDOMAIN rate and tunneling.*
+# *Description: Analyzes Route53 public query logs for NXDOMAIN rate and tunneling.*
 # ******************************************************************************
 
 # NOTE: Line shape is version date hosted-zone qname qtype rcode proto edge
@@ -15,17 +15,24 @@ register_format dns_route53 "Route53 DNS query logs (NXDOMAIN rate, tunneling he
 
 # *--- Detection ---*
 
+# Public hosted-zone logs use the same field layout for IPv4 and IPv6
+# resolvers. Resolver query logs from a VPC have a different JSON schema.
+# shellcheck disable=SC2016  # awk fields are evaluated by awk
+ROUTE53_RECORD_AWK='
+function route53_record() {
+  return (NF == 9 || NF == 10) && $1 ~ /^1\.[0-9]+$/ &&
+    $2 ~ /Z$/ && bl_iso_epoch($2) >= 0 && $3 ~ /^Z[A-Z0-9]+$/ &&
+    $5 ~ /^[A-Z][A-Z0-9]*$/ && toupper($6) ~ /^[A-Z][A-Z0-9]*$/ &&
+    $7 ~ /^(UDP|TCP)$/ && (resolver = bl_normal_ip($9)) != ""
+}
+'
+
 dns_route53_detect() {
-  local hits
-  hits=$(printf '%s\n' "$SAMPLE" \
-    | grep -cE '^1\.[0-9] [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z? [A-Z0-9]+ [^ ]+ [A-Z]+ [A-Z]+ (UDP|TCP) ' || true)
-  if [ "$hits" -ge 2 ]; then
-    echo 90
-  elif [ "$hits" -ge 1 ]; then
-    echo 60
-  else
-    echo 0
-  fi
+  printf '%s\n' "$SAMPLE" | awk "$AWK_IP_LIB$AWK_TIME_LIB$ROUTE53_RECORD_AWK"'
+    { sub(/\r$/, "") }
+    route53_record() { hits++ }
+    END { print (hits >= 2 ? 90 : hits ? 60 : 0) }
+  '
 }
 
 # *--- Analysis ---*
@@ -34,8 +41,11 @@ dns_route53_analyze() {
   local file=$1
   local raw kind a b
 
-  raw=$(awk "$AWK_IP_LIB"'
+  # shellcheck disable=SC2016  # quoted awk program
+  raw=$(awk_log "$file" "$AWK_IP_LIB$AWK_TIME_LIB$ROUTE53_RECORD_AWK"'
     {
+      sub(/\r$/, "")
+      if (!route53_record()) { skipped++; next }
       total++
       if (first_ts == "") first_ts = $2
       last_ts = $2
@@ -43,9 +53,8 @@ dns_route53_analyze() {
       sub(/\.$/, "", qname)
       qnames[qname]++
       qtype[$5]++
-      rcode[$6]++
-      resolvers[$9]++
-      if ($6 == "NXDOMAIN") nx++
+      resolvers[resolver]++
+      if (toupper($6) == "NXDOMAIN") nx++
       if (length(qname) > 60) { long_q++; if (long_ex == "") long_ex = qname }
       # parent domain = qname minus its first label; child growth per parent
       # is the classic tunneling shape
@@ -58,6 +67,7 @@ dns_route53_analyze() {
     }
     END {
       printf "TOTAL\t%d\t-\n", total
+      printf "SKIPPED\t%d\t-\n", skipped
       printf "NX\t%d\t-\n", nx
       printf "LONGQ\t%d\t%s\n", long_q, bl_tsv(long_ex)
       printf "TXT\t%d\t-\n", qtype["TXT"]
@@ -71,13 +81,14 @@ dns_route53_analyze() {
       for (t in qtype) printf "QTYPE\t%d\t%s\n", qtype[t], t
       for (p in children) printf "CHILDREN\t%d\t%s\n", children[p], bl_tsv(p)
     }
-  ' "$file")
+  ')
 
-  local total=0 nx=0 long_q=0 long_ex="" txt=0 uniq_q=0 uniq_res=0
+  local total=0 skipped=0 nx=0 long_q=0 long_ex="" txt=0 uniq_q=0 uniq_res=0
   local first_ts="" last_ts=""
   while IFS=$'\t' read -r kind a b; do
     case "$kind" in
       TOTAL) total=$a ;;
+      SKIPPED) skipped=$a ;;
       NX) nx=$a ;;
       LONGQ) long_q=$a; long_ex=$b ;;
       TXT) txt=$a ;;
@@ -89,6 +100,7 @@ dns_route53_analyze() {
   done < <(printf '%s\n' "$raw" | grep -Ev '^(QNAME|QTYPE|CHILDREN)' || true)
 
   report_metric "total_queries" "$total"
+  if [ "$skipped" -gt 0 ]; then report_metric "unparsed_lines" "$skipped"; fi
   report_metric "unique_names" "$uniq_q"
   report_metric "nxdomain" "$nx"
   report_metric "unique_resolvers" "$uniq_res"
@@ -117,7 +129,7 @@ dns_route53_analyze() {
   fi
 
   if [ "$long_q" -gt 0 ]; then
-    report_add high dns-tunneling-length \
+    report_add medium dns-tunneling-length \
       "$long_q quer(ies) with names over 60 chars (tunneling indicator)" \
       "count=$long_q" "example=$long_ex"
   fi

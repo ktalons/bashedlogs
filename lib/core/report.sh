@@ -14,6 +14,8 @@ R_SEV=()  # severity: info|low|medium|high|critical
 R_CAT=()  # short category slug, e.g. brute-force
 R_MSG=()  # human message
 R_KV=()   # tab-separated key=value pairs (may be empty)
+R_SCORE=0
+R_MAX_RANK=-1
 
 # Metrics: ordered key/value pairs for the stats section.
 M_KEY=()
@@ -21,25 +23,15 @@ M_VAL=()
 
 # *--- Severity Model ---*
 
-# Map severity name to rank (for --fail-level comparison) and weight (score).
-sev_rank() {
+# Set the rank used for exit status and weight used for scoring.
+severity_values() {
   case "$1" in
-    info) echo 0 ;;
-    low) echo 1 ;;
-    medium) echo 2 ;;
-    high) echo 3 ;;
-    critical) echo 4 ;;
-    *) echo -1 ;;
-  esac
-}
-
-sev_weight() {
-  case "$1" in
-    low) echo 1 ;;
-    medium) echo 3 ;;
-    high) echo 7 ;;
-    critical) echo 15 ;;
-    *) echo 0 ;;
+    info) SEV_RANK=0; SEV_WEIGHT=0 ;;
+    low) SEV_RANK=1; SEV_WEIGHT=1 ;;
+    medium) SEV_RANK=2; SEV_WEIGHT=3 ;;
+    high) SEV_RANK=3; SEV_WEIGHT=7 ;;
+    critical) SEV_RANK=4; SEV_WEIGHT=15 ;;
+    *) return 1 ;;
   esac
 }
 
@@ -53,10 +45,14 @@ sev_weight() {
 report_add() {
   local sev=$1 cat=$2 msg=$3
   shift 3
-  if [ "$(sev_rank "$sev")" = "-1" ]; then
+  local SEV_RANK SEV_WEIGHT
+  if ! severity_values "$sev"; then
     echo "bashedlogs: internal error: bad severity '$sev'" >&2
     exit 1
   fi
+  R_SCORE=$((R_SCORE + SEV_WEIGHT))
+  if [ "$R_SCORE" -gt 100 ]; then R_SCORE=100; fi
+  if [ "$SEV_RANK" -gt "$R_MAX_RANK" ]; then R_MAX_RANK=$SEV_RANK; fi
   local kv="" pair
   # A finding with no pairs leaves "$@" empty, which bash 4.0 calls unbound.
   for pair in ${1+"$@"}; do
@@ -78,18 +74,6 @@ report_metric() {
 
 # *--- Threat Scoring ---*
 
-# Threat score: weighted sum of findings, capped at 100.
-threat_score() {
-  local total=0 i
-  if [ "${#R_SEV[@]}" -gt 0 ]; then
-    for i in "${!R_SEV[@]}"; do
-      total=$((total + $(sev_weight "${R_SEV[$i]}")))
-    done
-  fi
-  if [ "$total" -gt 100 ]; then total=100; fi
-  echo "$total"
-}
-
 threat_level() {
   local score=$1
   if [ "$score" -ge 50 ]; then
@@ -103,16 +87,4 @@ threat_level() {
   else
     echo none
   fi
-}
-
-# Highest finding severity rank present (or -1 when there are no findings).
-max_finding_rank() {
-  local max=-1 r i
-  if [ "${#R_SEV[@]}" -gt 0 ]; then
-    for i in "${!R_SEV[@]}"; do
-      r=$(sev_rank "${R_SEV[$i]}")
-      if [ "$r" -gt "$max" ]; then max=$r; fi
-    done
-  fi
-  echo "$max"
 }

@@ -144,9 +144,9 @@ write_hostile_url() {
 # as trailing arguments.
 run_on_tty() {
   if script -qc true /dev/null >/dev/null 2>&1; then
-    run script -qc "$(printf '%q ' "$BL" "$@")" /dev/null < /dev/null
+    run env -u NO_COLOR script -qc "$(printf '%q ' "$BL" "$@")" /dev/null < /dev/null
   elif script -q /dev/null true >/dev/null 2>&1 < /dev/null; then
-    run script -q /dev/null "$BL" "$@" < /dev/null
+    run env -u NO_COLOR script -q /dev/null "$BL" "$@" < /dev/null
   else
     skip "no script(1) available to provide a terminal"
   fi

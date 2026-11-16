@@ -18,67 +18,73 @@
 # shellcheck disable=SC2034  # consumed by lib/formats/*.sh
 AWK_IP_LIB='
 function bl_valid_ip4(tok,    parts, j) {
-  if (tok !~ /^([0-9]+\.){3}[0-9]+$/) return 0
+  if (tok !~ /^([0-9]{1,3}\.){3}[0-9]{1,3}$/) return 0
   split(tok, parts, ".")
   for (j = 1; j <= 4; j++) {
-    if (length(parts[j]) > 3 || parts[j] + 0 > 255) return 0
+    if (parts[j] ~ /^0[0-9]/ || parts[j] + 0 > 255) return 0
   }
   return 1
 }
 
-# Accepts full, compressed (::), and IPv4-mapped IPv6. Rejects tokens with a
-# zone id or prefix length, which callers should strip first.
-function bl_valid_ip6(tok,    halves, nh, groups, n, i, g, tail, ntail, has4) {
-  if (tok !~ /:/) return 0
-  if (tok ~ /[^0-9A-Fa-f:.]/) return 0
-  if (tok ~ /:::/) return 0
-
-  has4 = 0
+# Expand to eight hextets for validation, then compress the longest run of
+# at least two zeroes (leftmost on ties). Treat a dotted IPv4 tail as two
+# hextets, and use dotted form for IPv4-mapped addresses.
+function bl_ip6(tok,    halves, g, octets, part, n, m, i, j, p, k, h, start, run, best, size, out, groups) {
+  if (tok !~ /:/ || tok ~ /[^0-9A-Fa-f:.]/ || tok ~ /:::/) return ""
   if (tok ~ /\./) {
-    # only the last group may be dotted-quad, and it must be a valid IPv4
-    ntail = split(tok, tail, ":")
-    if (!bl_valid_ip4(tail[ntail])) return 0
-    has4 = 1
+    if (!match(tok, /:[0-9.]+$/)) return ""
+    part = substr(tok, RSTART + 1)
+    if (!bl_valid_ip4(part)) return ""
+    split(part, octets, ".")
+    tok = substr(tok, 1, RSTART) sprintf("%x:%x", octets[1] * 256 + octets[2], octets[3] * 256 + octets[4])
+  }
+  n = split(tok, halves, "::")
+  if (n > 2) return ""
+  for (p = 1; p <= n; p++) {
+    part = halves[p]
+    if (part != "") {
+      m = split(part, g, ":")
+      for (i = 1; i <= m; i++) {
+        if (g[i] !~ /^[0-9A-Fa-f]{1,4}$/) return ""
+        h = tolower(g[i])
+        sub(/^0+/, "", h)
+        groups[++k] = h == "" ? "0" : h
+      }
+    }
+    if (p == 1) j = k
+  }
+  if (n == 1 && k != 8 || n == 2 && k >= 8) return ""
+  if (n == 2) {
+    for (i = k; i > j; i--) groups[i + 8 - k] = groups[i]
+    for (i = j + 1; i <= j + 8 - k; i++) groups[i] = "0"
   }
 
-  nh = split(tok, halves, "::")
-  if (nh > 2) return 0
-
-  if (nh == 2) {
-    # compressed form: total groups must be under the 8-group budget
-    n = bl_count_groups(halves[1]) + bl_count_groups(halves[2]) + (has4 ? 1 : 0)
-    if (n > 7) return 0
-    return bl_groups_ok(halves[1]) && bl_groups_ok(halves[2])
+  for (i = 1; i <= 8; i++) {
+    if (groups[i] == "0") {
+      if (run == 0) start = i
+      if (++run > size) { size = run; best = start }
+    } else run = 0
   }
-
-  # uncompressed: exactly 8 groups (a trailing IPv4 counts as two)
-  n = split(tok, groups, ":")
-  if (n != (has4 ? 7 : 8)) return 0
-  return bl_groups_ok(tok)
-}
-
-function bl_count_groups(part,    g, n, i, c) {
-  if (part == "") return 0
-  n = split(part, g, ":")
-  c = 0
-  for (i = 1; i <= n; i++) if (g[i] != "") c++
-  return c
-}
-
-function bl_groups_ok(part,    g, n, i) {
-  if (part == "") return 1
-  n = split(part, g, ":")
-  for (i = 1; i <= n; i++) {
-    if (g[i] == "") continue
-    if (g[i] ~ /\./) continue        # trailing IPv4 already validated
-    if (g[i] !~ /^[0-9A-Fa-f]{1,4}$/) return 0
+  if (best == 1 && size == 5 && groups[6] == "ffff") {
+    i = j = 0
+    for (p = 1; p <= length(groups[7]); p++) i = i * 16 + index("0123456789abcdef", substr(groups[7], p, 1)) - 1
+    for (p = 1; p <= length(groups[8]); p++) j = j * 16 + index("0123456789abcdef", substr(groups[8], p, 1)) - 1
+    return sprintf("::ffff:%d.%d.%d.%d", int(i / 256), i % 256, int(j / 256), j % 256)
   }
-  return 1
+  for (i = 1; i <= 8; i++) {
+    if (size >= 2 && i == best) {
+      out = out "::"
+      i += size - 1
+    } else {
+      if (out != "" && out !~ /:$/) out = out ":"
+      out = out groups[i]
+    }
+  }
+  return out
 }
 
-function bl_valid_ip(tok) {
-  return bl_valid_ip4(tok) || bl_valid_ip6(tok)
-}
+function bl_valid_ip6(tok) { return bl_ip6(tok) != "" }
+function bl_valid_ip(tok) { return bl_valid_ip4(tok) || bl_valid_ip6(tok) }
 
 # Analyzers hand results back to bash as tab-separated rows, so any free-text
 # value taken from a log (a URL, a username, a rule description) must have its
@@ -89,12 +95,19 @@ function bl_tsv(s,    t) {
   return t
 }
 
-# Normalize a token that may carry a port, brackets, a zone id, or a prefix.
-function bl_clean_ip(tok,    t) {
-  t = tok
-  gsub(/^\[|\]$/, "", t)
-  sub(/%[A-Za-z0-9._-]+$/, "", t)   # zone id
-  sub(/\/[0-9]+$/, "", t)           # prefix length
-  return t
+# Clean common endpoint decorations. A bare IPv6 final group is never a port.
+function bl_clean_ip(tok) {
+  sub(/\/[0-9]+$/, "", tok)
+  if (tok ~ /^\[[^]]+\](:[0-9]+)?$/) {
+    sub(/^\[/, "", tok)
+    sub(/\].*$/, "", tok)
+  } else if (tok ~ /^[0-9.]+:[0-9]+$/) sub(/:[0-9]+$/, "", tok)
+  sub(/%[A-Za-z0-9._-]+$/, "", tok)
+  return tok
+}
+
+function bl_normal_ip(tok) {
+  tok = bl_clean_ip(tok)
+  return bl_valid_ip4(tok) ? tok : bl_ip6(tok)
 }
 '

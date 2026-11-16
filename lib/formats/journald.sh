@@ -5,78 +5,71 @@
 # *Description: Triages systemd journal exports in short-iso or JSON format.*
 # ******************************************************************************
 
-# NOTE: Handles both `journalctl -o short-iso` text and `journalctl -o json`
-# (one JSON object per line). JSON fields are extracted with awk string
-# matching - enough for triage counts without breaking the zero-dependency
-# rule.
+# Supports journalctl short-iso text and one JSON object per line.
 
 # *--- Registration ---*
 
 register_format journald "journald exports (-o short-iso or -o json)"
 
+# *--- Record Parsing ---*
+
+# shellcheck disable=SC2016  # awk fields are evaluated by awk
+JOURNAL_RECORD_AWK='
+function journal_iso(    start) {
+  if ($1 !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/ || bl_iso_epoch($1) < 0) return 0
+  if (!match($0, /^[^ \t]+[ \t]+[^ \t]+[ \t]+[^ \t]+:[ \t]*/)) return 0
+  start = RLENGTH + 1
+  timestamp = $1
+  ident = $3
+  sub(/(\[[0-9]+\])?:$/, "", ident)
+  msg = tolower(substr($0, start))
+  return 1
+}
+
+function journal_json(    root) {
+  root = bl_json($0)
+  return bl_jstr(root, "__REALTIME_TIMESTAMP") ~ /^[0-9]+$/ ? root : 0
+}
+'
+
 # *--- Detection ---*
 
 journald_detect() {
-  local first hits
-  first=$(printf '%s\n' "$SAMPLE" | head -1)
-  case "$first" in
-    '{'*'"__REALTIME_TIMESTAMP"'*)
-      echo 95
-      return 0
-      ;;
-  esac
-  hits=$(printf '%s\n' "$SAMPLE" \
-    | grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[^ ]* [^ ]+ [^ ]+\[[0-9]+\]:' || true)
-  if [ "$hits" -ge 3 ]; then
-    echo 75
-  elif [ "$hits" -ge 1 ]; then
-    echo 45
-  else
-    echo 0
-  fi
+  printf '%s\n' "$SAMPLE" | awk "$AWK_JSON_LIB$AWK_TIME_LIB$JOURNAL_RECORD_AWK"'
+    /^[ \t]*\{/ { if (journal_json()) { json = 1; exit }; next }
+    journal_iso() { hits++ }
+    END { print (json ? 95 : hits >= 3 ? 75 : hits ? 55 : 0) }
+  '
 }
 
 # *--- Analysis ---*
 
 journald_analyze() {
   local file=$1
-  local first raw kind a b mode
+  local raw kind a b mode=iso
 
-  first=$(head -1 -- "$file")
-  case "$first" in
-    '{'*) mode=json ;;
-    *) mode=iso ;;
-  esac
-
-  raw=$(awk -v MODE="$mode" "$AWK_IP_LIB"'
-    # crude JSON field getter: "KEY":"value" (first occurrence, no nested escapes)
-    function jfield(line, key,    pat, rest, v) {
-      pat = "\"" key "\":\""
-      rest = index(line, pat)
-      if (rest == 0) return ""
-      v = substr(line, rest + length(pat))
-      sub(/".*$/, "", v)
-      return v
-    }
+  # shellcheck disable=SC2016  # quoted awk program
+  raw=$(awk_log "$file" "$AWK_IP_LIB$AWK_JSON_LIB$AWK_TIME_LIB$JOURNAL_RECORD_AWK"'
+    /^[ \t\r]*$/ { next }
     {
-      total++
-      if (MODE == "json") {
-        msg = tolower(jfield($0, "MESSAGE"))
-        ident = jfield($0, "SYSLOG_IDENTIFIER")
-        if (ident == "") ident = jfield($0, "_COMM")
-        prio = jfield($0, "PRIORITY")
-        if (prio != "") prios[prio]++
-        if (prio != "" && prio + 0 <= 2) sev_crit++
-        if (prio == "3") sev_err++
+      if (/^[ \t]*\{/) {
+        root = journal_json()
+        if (!root) { skipped++; next }
+        json_entries++
+        msg = tolower(bl_jstr(root, "MESSAGE"))
+        ident = bl_jstr(root, "SYSLOG_IDENTIFIER")
+        if (ident == "") ident = bl_jstr(root, "_COMM")
+        prio = bl_jstr(root, "PRIORITY")
+        if (prio ~ /^[0-2]$/) sev_crit++
+        if (prio ~ /^[0-3]$/) sev_err++
       } else {
-        if (first_ts == "") first_ts = $1
-        last_ts = $1
-        msg = tolower($0)
-        ident = $3
-        sub(/\[[0-9]+\]:?$/, "", ident)
-        sub(/:$/, "", ident)
+        if (!journal_iso()) { skipped++; next }
+        iso_entries++
+        if (first_ts == "") first_ts = timestamp
+        last_ts = timestamp
         if (msg ~ /error|fail|critical/) sev_err++
       }
+      total++
       if (ident != "") idents[ident]++
       if (msg ~ /out of memory|oom-killer|oom_kill/) oom++
       if (msg ~ /segfault/) segv++
@@ -84,6 +77,9 @@ journald_analyze() {
     }
     END {
       printf "TOTAL\t%d\n", total
+      mode = json_entries ? (iso_entries ? "mixed" : "json") : "iso"
+      printf "MODE\t%s\n", mode
+      printf "SKIPPED\t%d\n", skipped
       printf "CRIT\t%d\n", sev_crit
       printf "ERR\t%d\n", sev_err
       printf "OOM\t%d\n", oom
@@ -93,12 +89,14 @@ journald_analyze() {
       if (last_ts != "") printf "LASTTS\t%s\n", last_ts
       for (i in idents) printf "IDENT\t%d\t%s\n", idents[i], bl_tsv(i)
     }
-  ' "$file")
+  ')
 
-  local total=0 crit=0 err=0 oom=0 segv=0 authfail=0 first_ts="" last_ts=""
+  local total=0 skipped=0 crit=0 err=0 oom=0 segv=0 authfail=0 first_ts="" last_ts=""
   while IFS=$'\t' read -r kind a b; do
     case "$kind" in
       TOTAL) total=$a ;;
+      MODE) mode=${a:-iso} ;;
+      SKIPPED) skipped=$a ;;
       CRIT) crit=$a ;;
       ERR) err=$a ;;
       OOM) oom=$a ;;
@@ -110,6 +108,7 @@ journald_analyze() {
   done < <(printf '%s\n' "$raw" | grep -v '^IDENT' || true)
 
   report_metric "total_entries" "$total"
+  if [ "$skipped" -gt 0 ]; then report_metric "unparsed_lines" "$skipped"; fi
   report_metric "input_mode" "$mode"
   report_metric "error_entries" "$err"
   if [ -n "$first_ts" ]; then

@@ -12,7 +12,7 @@ set -euo pipefail
 # *--- Configuration ---*
 
 # shellcheck disable=SC2034  # read by lib/core (cli --version, output emitters)
-BASHEDLOGS_VERSION="2.0.1"
+BASHEDLOGS_VERSION="2.1.0-dev"
 
 # *--- Bash Version Guard ---*
 
@@ -27,7 +27,7 @@ fi
 # *--- Library Loading ---*
 
 # @BUNDLE-SKIP-START -- the single-file release artifact inlines lib/ here instead
-BASHEDLOGS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BASHEDLOGS_ROOT="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 for _lib in "$BASHEDLOGS_ROOT"/lib/core/*.sh "$BASHEDLOGS_ROOT"/lib/formats/*.sh; do
   # shellcheck source=/dev/null
   source "$_lib"

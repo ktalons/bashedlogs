@@ -20,24 +20,13 @@ IOC_SHA256=()
 # *--- Extraction ---*
 
 extract_iocs() {
-  local file=$1 kind value
-
-  while IFS=$'\t' read -r kind value; do
-    case "$kind" in
-      IP) IOC_IPS+=("$value") ;;
-      DOM) IOC_DOMAINS+=("$value") ;;
-      URL) IOC_URLS+=("$value") ;;
-      MD5) IOC_MD5+=("$value") ;;
-      SHA1) IOC_SHA1+=("$value") ;;
-      SHA256) IOC_SHA256+=("$value") ;;
-    esac
-  done < <(awk '
-    function valid_ip(tok,    parts, j) {
-      if (tok !~ /^([0-9]+\.){3}[0-9]+$/) return 0
-      split(tok, parts, ".")
-      for (j = 1; j <= 4; j++) {
-        if (length(parts[j]) > 3 || parts[j] + 0 > 255) return 0
-      }
+  local file=$1 kind value rows
+  # shellcheck disable=SC2016  # quoted awk program
+  rows=$(awk_log "$file" "$AWK_IP_LIB"'
+    function emit_ip(t) {
+      t = bl_normal_ip(t)
+      if (t == "") return 0
+      if (!(("ip" SUBSEP t) in seen)) { seen["ip", t] = 1; printf "IP\t%s\n", t }
       return 1
     }
     function is_ext(tld) {
@@ -48,30 +37,30 @@ extract_iocs() {
       # URLs first (full tokens); their hostname is also emitted as a domain
       # so analysts can pivot on the host without re-parsing the URL.
       line = $0
-      while (match(line, /https?:\/\/[^ "'\''<>)\]]+/)) {
+      while (match(line, /[Hh][Tt][Tt][Pp][Ss]?:\/\/[^[:space:]"'\''<>)]+/)) {
         u = substr(line, RSTART, RLENGTH)
-        sub(/[.,;:]+$/, "", u)
+        line = substr(line, RSTART + RLENGTH)
+        sub(/[.,;]+$/, "", u)
         if (!(u in seen)) { seen[u] = 1; printf "URL\t%s\n", u }
         h = tolower(u)
         sub(/^https?:\/\//, "", h)
         sub(/[\/?#].*$/, "", h)
         sub(/^[^@]*@/, "", h)
+        if (emit_ip(h)) continue
         sub(/:[0-9]+$/, "", h)
         if (h ~ /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]*$/) {
           if (!(("d" SUBSEP h) in seen)) { seen["d", h] = 1; printf "DOM\t%s\n", h }
         }
-        line = substr(line, RSTART + RLENGTH)
       }
       # then word-ish tokens
-      n = split(tolower($0), toks, /[^a-z0-9._:\/-]+/)
+      n = split(tolower($0), toks, /[^a-z0-9._:%\/-]+/)
       for (i = 1; i <= n; i++) {
         t = toks[i]
-        gsub(/^[._:\/-]+|[._:\/-]+$/, "", t)
+        gsub(/^[._\/-]+|[._\/-]+$/, "", t)
         if (t == "") continue
-        if (valid_ip(t)) {
-          if (!(("ip" SUBSEP t) in seen)) { seen["ip", t] = 1; printf "IP\t%s\n", t }
-          continue
-        }
+        if (emit_ip(t)) continue
+        gsub(/^:+|:+$/, "", t)
+        if (t == "") continue
         if (t ~ /^[0-9a-f]+$/) {
           if (length(t) == 32 && !(("m" SUBSEP t) in seen)) { seen["m", t] = 1; printf "MD5\t%s\n", t }
           else if (length(t) == 40 && !(("s1" SUBSEP t) in seen)) { seen["s1", t] = 1; printf "SHA1\t%s\n", t }
@@ -87,17 +76,30 @@ extract_iocs() {
         }
       }
     }
-  ' "$file" | sort -t "$(printf '\t')" -k1,1 -k2,2)
+  ' | sort -t "$(printf '\t')" -k1,1 -k2,2)
+  while IFS=$'\t' read -r kind value; do
+    case "$kind" in
+      IP) IOC_IPS+=("$value") ;;
+      DOM) IOC_DOMAINS+=("$value") ;;
+      URL) IOC_URLS+=("$value") ;;
+      MD5) IOC_MD5+=("$value") ;;
+      SHA1) IOC_SHA1+=("$value") ;;
+      SHA256) IOC_SHA256+=("$value") ;;
+    esac
+  done <<< "$rows"
 }
 
 # *--- Output Helpers ---*
 
-# maybe_defang <value>: dots -> [.] and http -> hxxp when --defang is on.
+# Defang dots, HTTP schemes and colons in standalone IPv6 addresses.
 maybe_defang() {
   local v=$1
   if [ "$DEFANG" -eq 1 ]; then
-    v=${v//http:\/\//hxxp://}
-    v=${v//https:\/\//hxxps://}
+    case $v in
+      [Hh][Tt][Tt][Pp]://*) v=hxxp://${v:7} ;;
+      [Hh][Tt][Tt][Pp][Ss]://*) v=hxxps://${v:8} ;;
+      *:*) v=${v//:/[:]} ;;
+    esac
     v=${v//./[.]}
   fi
   printf '%s' "$v"

@@ -12,68 +12,73 @@
 
 register_format web_access "Apache/NGINX access logs (status mix, scanners, injection probes)"
 
+# *--- Record Parsing ---*
+
+# Mask escaped backslashes and quotes without moving the field boundaries.
+# This works for Apache and NGINX escape=json fields in common/combined logs.
+# shellcheck disable=SC2016  # awk fields are evaluated by awk
+WEB_RECORD_AWK='
+function web_record(    line, mask, q, f, i, pos, pre, req, post) {
+  line = $0
+  sub(/\r$/, "", line)
+  mask = line
+  gsub(/\\\\/, "__", mask)
+  gsub(/\\"/, "__", mask)
+  if (split(mask, q, "\"") < 3) return 0
+
+  pos = 1
+  for (i = 1; i <= 3; i++) {
+    f[i] = substr(line, pos, length(q[i]))
+    pos += length(q[i]) + 1
+  }
+  if (!match(f[1], /\[[0-9]{1,2}\/[A-Z][a-z]{2}\/[0-9]{4}:[^]]+\][ \t]+$/)) return 0
+  timestamp = substr(f[1], RSTART + 1, RLENGTH - 1)
+  sub(/\][ \t]+$/, "", timestamp)
+  split(f[1], pre, " ")
+  ip = bl_normal_ip(pre[1])
+  if (ip == "" && pre[1] !~ /^([A-Za-z0-9][A-Za-z0-9.-]*|-)$/) return 0
+
+  split(f[3], post, " ")
+  if (post[1] !~ /^[1-5][0-9]{2}$/) return 0
+  status = post[1] + 0
+  request = f[2]
+  split(request, req, " ")
+  path = req[2]
+  return 1
+}
+'
+
 # *--- Detection ---*
 
 web_access_detect() {
-  local hits
-  hits=$(printf '%s\n' "$SAMPLE" \
-    | grep -cE '^[0-9]{1,3}(\.[0-9]{1,3}){3} [^ ]+ [^ ]+ \[[^]]+\] "[A-Z]+ ' || true)
-  if [ "$hits" -ge 2 ]; then
-    echo 90
-  elif [ "$hits" -ge 1 ]; then
-    echo 60
-  else
-    echo 0
-  fi
+  printf '%s\n' "$SAMPLE" | awk "$AWK_IP_LIB$WEB_RECORD_AWK"'
+    web_record() { hits++ }
+    END { print (hits >= 2 ? 90 : hits ? 60 : 0) }
+  '
 }
 
 # *--- Analysis ---*
 
 web_access_analyze() {
   local file=$1
-  local raw kind a b
+  local raw kind a b c
 
-  # FS='"' gives: $1 = 'ip - user [ts] ', $2 = request, $3 = ' status size '
-  # SECURITY: Apache and nginx escape=json log a quote inside a field as \",
-  # so a line holding a backslash is re-split on unescaped quotes only.
-  raw=$(awk -F'"' "$AWK_IP_LIB"'
-    # Fill f[1..3] as FS="\"" would, but step over \" escapes. Masking \\ first
-    # lets \\" still close a field; the mask keeps offsets, so text comes from line.
-    function wa_fields(line, f,    m, q, n, i, pos) {
-      m = line
-      gsub(/\\\\/, "__", m)
-      gsub(/\\"/, "__", m)
-      n = split(m, q, "\"")
-      pos = 1
-      for (i = 1; i <= 3; i++) {
-        f[i] = (i <= n) ? substr(line, pos, length(q[i])) : ""
-        pos += length(q[i]) + 1
-      }
-    }
+  raw=$(awk_log "$file" "$AWK_IP_LIB$WEB_RECORD_AWK"'
     {
+      if (!web_record()) { skipped++; next }
       total++
-      f[1] = $1; f[2] = $2; f[3] = $3
-      if (index($0, "\\") > 0) wa_fields($0, f)
-
-      n = split(f[1], pre, " ")
-      cand = (n >= 1) ? bl_clean_ip(pre[1]) : ""
-      ip = bl_valid_ip(cand) ? cand : ""
       if (ip != "") ips[ip]++
-      if (first_ts == "" && match(f[1], /\[[^]]+\]/)) first_ts = substr(f[1], RSTART + 1, RLENGTH - 2)
-      if (match(f[1], /\[[^]]+\]/)) last_ts = substr(f[1], RSTART + 1, RLENGTH - 2)
-
-      split(f[2], req, " ")
-      path = req[2]
+      if (first_ts == "") first_ts = timestamp
+      last_ts = timestamp
       if (path != "") paths[path]++
 
-      split(f[3], post, " ")
-      status = post[1] + 0
-      if (status >= 200 && status < 300) s2xx++
-      else if (status >= 300 && status < 400) s3xx++
-      else if (status >= 400 && status < 500) { s4xx++; if (status == 404 && ip != "") nf[ip]++ }
-      else if (status >= 500) s5xx++
+      if (status < 200) s1xx++
+      else if (status < 300) s2xx++
+      else if (status < 400) s3xx++
+      else if (status < 500) { s4xx++; if (status == 404 && ip != "") nf[ip]++ }
+      else s5xx++
 
-      low = tolower(f[2])
+      low = tolower(request)
       if (low ~ /union[^a-z0-9]+select|union\+select|union%20select|information_schema|sleep\(|benchmark\(/) {
         sqli++; if (sqli_ex == "") sqli_ex = path
       }
@@ -86,6 +91,8 @@ web_access_analyze() {
     }
     END {
       printf "TOTAL\t%d\t-\n", total
+      printf "SKIPPED\t%d\t-\n", skipped
+      printf "S1XX\t%d\t-\n", s1xx
       printf "S2XX\t%d\t-\n", s2xx
       printf "S3XX\t%d\t-\n", s3xx
       printf "S4XX\t%d\t-\n", s4xx
@@ -99,15 +106,20 @@ web_access_analyze() {
       if (last_ts != "") printf "LASTTS\t%s\t-\n", last_ts
       for (i in ips) printf "IP\t%d\t%s\n", ips[i], i
       for (p in paths) printf "PATH\t%d\t%s\n", paths[p], bl_tsv(p)
-      for (i in nf) printf "NF\t%d\t%s\n", nf[i], i
+      for (i in nf) {
+        if (nf[i] >= 20 || (ips[i] >= 10 && nf[i] * 2 >= ips[i]))
+          printf "NF\t%d\t%s\t%d\n", nf[i], i, ips[i]
+      }
     }
-  ' "$file")
+  ')
 
-  local total=0 s2=0 s3=0 s4=0 s5=0 sqli=0 xss=0 trav=0 probe=0 probe_ips=0
+  local total=0 skipped=0 s1=0 s2=0 s3=0 s4=0 s5=0 sqli=0 xss=0 trav=0 probe=0 probe_ips=0
   local sqli_ex="" xss_ex="" trav_ex="" first_ts="" last_ts=""
   while IFS=$'\t' read -r kind a b; do
     case "$kind" in
       TOTAL) total=$a ;;
+      SKIPPED) skipped=$a ;;
+      S1XX) s1=$a ;;
       S2XX) s2=$a ;;
       S3XX) s3=$a ;;
       S4XX) s4=$a ;;
@@ -122,6 +134,8 @@ web_access_analyze() {
   done < <(printf '%s\n' "$raw" | grep -Ev '^(IP|PATH|NF)' || true)
 
   report_metric "total_requests" "$total"
+  if [ "$skipped" -gt 0 ]; then report_metric "unparsed_lines" "$skipped"; fi
+  if [ "$s1" -gt 0 ]; then report_metric "status_1xx" "$s1"; fi
   report_metric "status_2xx" "$s2"
   report_metric "status_3xx" "$s3"
   report_metric "status_4xx" "$s4"
@@ -164,16 +178,11 @@ web_access_analyze() {
   fi
 
   # Scanner: an IP whose 404 volume is high in absolute or relative terms.
-  while IFS=$'\t' read -r kind a b; do
+  while IFS=$'\t' read -r kind a b c; do
     if [ -z "$kind" ]; then continue; fi
-    local reqs
-    reqs=$(printf '%s\n' "$raw" | awk -F'\t' -v ip="$b" '$1 == "IP" && $3 == ip { print $2 }')
-    reqs=${reqs:-0}
-    if [ "$a" -ge 20 ] || { [ "$reqs" -ge 10 ] && [ $((a * 2)) -ge "$reqs" ]; }; then
-      report_add medium scanning \
-        "$a not-found responses to $b across $reqs request(s)" \
-        "ip=$b" "status_404=$a" "requests=$reqs"
-    fi
+    report_add medium scanning \
+      "$a not-found responses to $b across $c request(s)" \
+      "ip=$b" "status_404=$a" "requests=$c"
   done < <(printf '%s\n' "$raw" | grep '^NF' | sort -t "$(printf '\t')" -k2,2rn -k3,3 | head -5 || true)
 
   if [ "$probe" -gt 0 ]; then

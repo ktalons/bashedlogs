@@ -11,7 +11,7 @@ set -euo pipefail
 
 # *--- Setup ---*
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 FIX="$ROOT/tests/fixtures"
 
 # *--- Generic Fixtures ---*

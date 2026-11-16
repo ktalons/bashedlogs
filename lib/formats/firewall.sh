@@ -12,19 +12,52 @@
 
 register_format firewall "iptables + pfSense filterlog (blocks, port scans, repeat offenders)"
 
+# *--- Record Parsing ---*
+
+# shellcheck disable=SC2016  # awk fields are evaluated by awk
+FIREWALL_RECORD_AWK='
+function port(s) {
+  return s ~ /^[0-9]{1,5}$/ && s + 0 <= 65535 ? sprintf("%d", s) : ""
+}
+
+function firewall_record(    f, i, offset, prefix) {
+  sub(/\r$/, "")
+  src = ""; dst = ""; dpt = ""; proto = ""; action = ""
+  if (match($0, /(^|[ \t])filterlog(\[[0-9]+\])?:[ \t]*/)) {
+    split(substr($0, RSTART + RLENGTH), f, ",")
+    if (f[9] == "4") { proto = f[17]; offset = 19 }
+    else if (f[9] == "6") { proto = f[13]; offset = 16 }
+    else return 0
+    proto = tolower(proto)
+    action = f[7]
+    src = bl_normal_ip(f[offset])
+    dst = bl_normal_ip(f[offset + 1])
+    dpt = f[offset + 3]
+  } else {
+    for (i = 1; i <= NF; i++) {
+      if ($i ~ /^SRC=/) src = bl_normal_ip(substr($i, 5))
+      else if ($i ~ /^DST=/) dst = bl_normal_ip(substr($i, 5))
+      else if ($i ~ /^DPT=/) dpt = substr($i, 5)
+      else if ($i ~ /^PROTO=/) proto = tolower(substr($i, 7))
+    }
+    # Common rule prefixes and a bare trailing verdict occur in
+    # iptables exports. A substring inside a field is not a verdict.
+    prefix = tolower($0)
+    sub(/[ \t](in|out|src)=.*/, "", prefix)
+    if (prefix ~ /(^|[^a-z0-9])(drop|reject|denied|block)([^a-z0-9]|$)/ ||
+        tolower($NF) ~ /^(drop|reject|denied|block)$/) action = "block"
+  }
+  return src != "" && dst != "" && proto ~ /^[a-z0-9-]+$/
+}
+'
+
 # *--- Detection ---*
 
 firewall_detect() {
-  local ipt pf
-  ipt=$(printf '%s\n' "$SAMPLE" | grep -c 'SRC=.*DST=.*PROTO=' || true)
-  pf=$(printf '%s\n' "$SAMPLE" | grep -c 'filterlog' || true)
-  if [ $((ipt + pf)) -ge 2 ]; then
-    echo 90
-  elif [ $((ipt + pf)) -ge 1 ]; then
-    echo 60
-  else
-    echo 0
-  fi
+  printf '%s\n' "$SAMPLE" | awk "$AWK_IP_LIB$FIREWALL_RECORD_AWK"'
+    firewall_record() { hits++ }
+    END { print (hits >= 2 ? 90 : hits ? 60 : 0) }
+  '
 }
 
 # *--- Analysis ---*
@@ -33,88 +66,47 @@ firewall_analyze() {
   local file=$1
   local raw kind a b c
 
-  raw=$(awk "$AWK_IP_LIB"'
-    # iptables kernel line: KEY=VALUE tokens
-    /SRC=.*DST=.*PROTO=/ {
+  raw=$(awk_log "$file" "$AWK_IP_LIB$FIREWALL_RECORD_AWK"'
+    {
+      if (!firewall_record()) { skipped++; next }
       total++
-      src = ""; dpt = ""; action = "log"; proto = ""
-      for (i = 1; i <= NF; i++) {
-        if ($i ~ /^SRC=/) src = bl_clean_ip(substr($i, 5))
-        else if ($i ~ /^DPT=/) dpt = substr($i, 5)
-        else if ($i ~ /^PROTO=/) proto = tolower(substr($i, 7))
-      }
-      # ICMP and friends have no ports; anything in DPT there is not a port.
-      if (proto != "tcp" && proto != "udp") dpt = ""
-      if (tolower($0) ~ /drop|reject|denied|block/) { action = "block"; blocked++ }
-      if (bl_valid_ip(src)) {
-        srcs[src]++
-        if (action == "block") {
-          bsrcs[src]++
-          if (dpt != "") {
-            if (!((src SUBSEP dpt) in seen_pair)) { seen_pair[src, dpt] = 1; ports_per_src[src]++ }
-            pair_count[src, dpt]++
-            if (pair_count[src, dpt] > max_pair_n[src]) { max_pair_n[src] = pair_count[src, dpt]; max_pair_p[src] = dpt }
-          }
-        }
-      }
+      if (proto == "tcp" || proto == "udp") dpt = port(dpt)
+      else dpt = ""
       if (dpt != "") dports[dpt]++
-      next
-    }
-    # pfSense filterlog CSV: action at a fixed early position, then the first
-    # two dotted quads are src/dst, the next two numeric fields the ports
-    /filterlog/ {
-      total++
-      csv = $0
-      sub(/^.*filterlog(\[[0-9]+\])?: */, "", csv)
-      n = split(csv, f, ",")
-      action = ""; proto = ""
-      src = ""; dst = ""; sport = ""; dport = ""
-      for (i = 1; i <= n; i++) {
-        if (f[i] == "block" || f[i] == "pass" || f[i] == "rdr") { if (action == "") action = f[i] }
-        if (proto == "" && (f[i] == "tcp" || f[i] == "udp" || f[i] == "icmp" || f[i] == "icmpv6" \
-            || f[i] == "igmp" || f[i] == "esp" || f[i] == "gre" || f[i] == "ipv6-icmp")) proto = f[i]
-        if (src == "" && bl_valid_ip(f[i])) { src = f[i]; continue }
-        if (src != "" && dst == "" && bl_valid_ip(f[i])) { dst = f[i]; continue }
-        # Ports only exist for tcp/udp; for icmp these positions are type/code.
-        if (proto != "tcp" && proto != "udp") continue
-        if (dst != "" && sport == "" && f[i] ~ /^[0-9]+$/) { sport = f[i]; continue }
-        if (sport != "" && dport == "" && f[i] ~ /^[0-9]+$/) { dport = f[i]; continue }
+      if (action != "block") next
+      blocked++
+      bsrcs[src]++
+      if (dpt == "") next
+      if (!((src SUBSEP dpt) in pair_count)) ports_per_src[src]++
+      pair_count[src, dpt]++
+      if (pair_count[src, dpt] > max_pair_n[src] ||
+          (pair_count[src, dpt] == max_pair_n[src] && dpt + 0 < max_pair_p[src] + 0)) {
+        max_pair_n[src] = pair_count[src, dpt]
+        max_pair_p[src] = dpt
       }
-      if (action == "block") blocked++
-      if (src != "") {
-        srcs[src]++
-        if (action == "block") {
-          bsrcs[src]++
-          if (dport != "") {
-            if (!((src SUBSEP dport) in seen_pair)) { seen_pair[src, dport] = 1; ports_per_src[src]++ }
-            pair_count[src, dport]++
-            if (pair_count[src, dport] > max_pair_n[src]) { max_pair_n[src] = pair_count[src, dport]; max_pair_p[src] = dport }
-          }
-        }
-      }
-      if (dport != "") dports[dport]++
-      next
     }
     END {
       printf "TOTAL\t%d\t-\n", total
+      printf "SKIPPED\t%d\t-\n", skipped
       printf "BLOCKED\t%d\t-\n", blocked
-      for (s in srcs) printf "SRC\t%d\t%s\n", srcs[s], s
       for (s in bsrcs) printf "BSRC\t%d\t%s\n", bsrcs[s], s
       for (p in dports) printf "DPORT\t%d\t%s\n", dports[p], p
       for (s in ports_per_src) printf "SCAN\t%d\t%s\n", ports_per_src[s], s
       for (s in max_pair_n) printf "REPEAT\t%d\t%s\t%s\n", max_pair_n[s], s, max_pair_p[s]
     }
-  ' "$file")
+  ')
 
-  local total=0 blocked=0
+  local total=0 skipped=0 blocked=0
   while IFS=$'\t' read -r kind a b; do
     case "$kind" in
       TOTAL) total=$a ;;
+      SKIPPED) skipped=$a ;;
       BLOCKED) blocked=$a ;;
     esac
   done < <(printf '%s\n' "$raw" | grep -Ev '^(SRC|BSRC|DPORT|SCAN|REPEAT)' || true)
 
   report_metric "total_events" "$total"
+  if [ "$skipped" -gt 0 ]; then report_metric "unparsed_lines" "$skipped"; fi
   report_metric "blocked_events" "$blocked"
 
   local list=""

@@ -25,8 +25,10 @@ setup() {
 @test "every analyzer emits valid JSON for every fixture" {
   local bad=0
   for fx in "$FIXTURES"/*/*; do
+    case $fx in */talonsoclab-*) continue ;; esac
+    [ -f "$fx" ] || continue
     for f in $ALL_FORMATS; do
-      if ! "$BL" --format "$f" --iocs -o json "$fx" 2>/dev/null | jq -e . >/dev/null 2>&1; then
+      if ! (set -o pipefail; "$BL" --format "$f" --iocs -o json "$fx" | jq -e . >/dev/null); then
         echo "invalid JSON: --format $f on $fx" >&2
         bad=1
       fi

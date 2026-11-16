@@ -6,7 +6,7 @@ resume.
 
 | Claim | Where it lives | Proof |
 |---|---|---|
-| Zero dependencies (bash + coreutils/awk only) | README, site, resume | `floor-bash4` CI job runs the tree and the built artifact in a bare `bash:4.0` container with busybox userland |
+| Core analysis uses Bash and standard utilities | README, site, resume | `floor-bash4` CI job runs the tree and the built artifact in a bare `bash:4.0` container with busybox userland |
 | Automatic format detection | README, site, resume | `tests/detect.bats`, plus per-format detection assertions in `formats.bats` and `soc_formats.bats` |
 | journald analyzer | site, resume | `tests/formats.bats` — both `-o short-iso` and `-o json` export modes |
 | syslog analyzer | site, resume | `tests/formats.bats` |
@@ -23,7 +23,7 @@ resume.
 | shellcheck-clean | README badge | `lint` CI job, `shellcheck -x` must exit 0 on the tree; `build` job also lints the artifact |
 | Tested on Linux and macOS | README badge | `test-linux` and `test-macos` CI jobs run the full suite on both userlands |
 | Single-file install | README | `build` CI job builds `dist/bashedlogs` and reruns the whole suite against it |
-| Counts one attempt once on dual-logging hosts | CHANGELOG | `tests/regressions.bats` — Debian sshd+PAM fixture reports 3, not 6 |
+| Uses native failures on hosts that also log PAM failures | CHANGELOG | `tests/regressions.bats` — Debian sshd+PAM fixture reports 3, not 6 |
 | IPv4 and IPv6 both detected | CHANGELOG | `tests/regressions.bats` — IPv6 burst alerts; validator accepts 5 real forms and rejects 7 malformed |
 | ICMP contributes no ports | CHANGELOG | `tests/regressions.bats` — ICMP fixture yields only real tcp ports |
 | Alerts attributed to the affected host | CHANGELOG | `tests/regressions.bats` — `agent.name` wins over `manager.name` |
@@ -33,8 +33,13 @@ resume.
 | Sanitizing stays fast on bash 4.0 | CHANGELOG | `floor-bash4` CI step — 13,000 escape sequences through the tree and the artifact under bash 4.0 and busybox, each under 20s |
 | An invalid byte cannot stop a run | README, CHANGELOG | `tests/hostile.bats` — `\377` beside an escape sequence under a UTF-8 locale exits 0 in pretty and JSON with no raw ESC; EUC stray bytes pass through unchanged |
 | Escaped quotes in Apache logs do not hide payloads | CHANGELOG | `tests/regressions.bats` — SQLi and XSS after `\"`, spoofed status, user field, referer and user agent, CRLF |
-| The SSH source address comes from sshd, not from client text | README, CHANGELOG | `tests/regressions.bats` — a framed username, a PAM `user=`, a forged program tag, a rewritten tag that must still count, a re-stamped line whose stacked prefixes must not swallow the event, a container-rewritten RFC 5424 APP-NAME that must still alert, and one event read identically across four log shapes; the `floor-bash4` CI step repeats the check under busybox awk. Bounded by the CHANGELOG's Known issues: attribution is trusted, not proved |
+| The SSH source address comes from sshd, not from client text | README, CHANGELOG | `tests/regressions.bats` — a framed username, a PAM `user=`, a forged program tag, a rewritten tag that must still count, a re-stamped line whose stacked prefixes must not swallow the event, a container-rewritten RFC 5424 APP-NAME that must still alert, and one event read identically across four log shapes; the `floor-bash4` CI step repeats the check under busybox awk. See README for the remaining producer and same-host PAM limits |
 | No analyzer aborts on mismatched input | — | `tests/robustness.bats` — all 8 analyzers over every fixture, plus empty and junk files |
+| SSH correlation uses timezone offsets, input order, and destination host | README | `tests/audit.bats` — offset aliases, IPv6 aliases, same-second events, different hosts, and PAM-only hosts |
+| SSH findings disclose producer evidence | README | `tests/audit.bats` — relay tags, named-only mode, quoted RFC 5424 metadata, contradictory journal producer and ambiguous peer |
+| JSON fields are read from their expected objects | CHANGELOG | `tests/audit.bats` — nested decoys, duplicate keys, escapes, invalid priorities and scoped MITRE IDs |
+| Public DNS, IPv6 web, and IPv6 firewall records use valid fields | CHANGELOG | `tests/audit.bats` — AWS fractional timestamps, malformed records, HTTP statuses, and fixed pfSense ports |
+| Hostile input still produces UTF-8 JSON | README | `tests/audit.bats` — strict UTF-8 decoding and Unicode preservation in both machine report modes |
 
 ## Audit note
 
